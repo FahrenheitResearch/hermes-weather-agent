@@ -321,7 +321,8 @@ def _dispatch(name: str, args: dict):
 
         ansi = rgba_to_ansi(np.array(img), img.width, img.height, width)
         # Print directly — never return ANSI in the result (it's 500KB+ of escape codes)
-        print(ansi)
+        sys.stderr.write(ansi + "\n")
+        sys.stderr.flush()
         return {"rendered": True, "variable": variable, "run": run, **extra}
 
     elif name == "wx_radar_terminal":
@@ -361,7 +362,8 @@ def _dispatch(name: str, args: dict):
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
         ansi = result.stdout.decode("utf-8", errors="replace")
         if ansi.strip():
-            print(ansi)
+            sys.stderr.write(ansi + "\n")
+            sys.stderr.flush()
             return {"rendered": True, "site": args["site"]}
         return {"error": f"Radar render failed for {args['site']}"}
 
@@ -392,7 +394,8 @@ def _dispatch(name: str, args: dict):
         raw = rustmet.render_skewt(p, t, td, wind_speed=ws, wind_dir=wd, width=400, height=400)
         img = Image.frombytes("RGBA", (400, 400), bytes(raw))
         ansi = rgba_to_ansi(np.array(img), 400, 400, args.get("width", 120))
-        print(ansi)
+        sys.stderr.write(ansi + "\n")
+        sys.stderr.flush()
         return {"rendered": True, "indices": s.get("indices", {})}
 
     elif name == "wx_train":
