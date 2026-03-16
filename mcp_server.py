@@ -235,7 +235,7 @@ def _dispatch(name: str, args: dict):
         return get_build_status()
 
     elif name == "wx_render_terminal":
-        import os
+        import os, subprocess, shutil
         import numpy as np, rustmet
         from tools.ansi_render import rgba_to_ansi
         from tools.compute import DERIVED_FIELDS, compute_derived
@@ -246,6 +246,41 @@ def _dispatch(name: str, args: dict):
         width = args.get("width", 120)
         if run == "latest":
             run = _resolve_latest(model)
+
+        # Try wx-pro first for high-quality rendering (handles basemap, colortables, etc)
+        wx_pro = None
+        for candidate in [
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx-pro.exe",
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx-pro",
+            Path("/tmp/rustmet/target/release/wx-pro"),
+            shutil.which("wx-pro"),
+        ]:
+            if candidate and Path(str(candidate)).exists():
+                wx_pro = str(candidate); break
+
+        if wx_pro and variable not in DERIVED_FIELDS:
+            # Map variable to wx-pro var name
+            var_map = {
+                "Convective Available Potential Energy": "cape",
+                "Convective Inhibition": "cin",
+                "Composite Reflectivity": "refc",
+                "Storm Relative Helicity": "helicity",
+                "Temperature": "temp",
+                "Dewpoint Temperature": "dewpoint",
+                "Wind Speed (Gust)": "gust",
+                "Visibility": "vis",
+                "Precipitable Water": "pwat",
+            }
+            wx_var = var_map.get(variable, variable.lower().replace(" ", "_"))
+            result = subprocess.run(
+                [wx_pro, "model-image", "--model", model, "--var", wx_var,
+                 "--ansi", "--ansi-mode", "block", "--ansi-width", str(width)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            ansi = result.stderr.decode("utf-8", errors="replace")
+            if ansi.strip() and len(ansi) > 100:
+                Path("/tmp/wx_display.ansi").write_text(ansi)
+                return {"rendered": True, "display_file": "/tmp/wx_display.ansi",
+                        "variable": variable, "run": run, "renderer": "wx-pro"}
 
         _dn = open(os.devnull, 'w'); _old = os.dup(2); os.dup2(_dn.fileno(), 2)
         try:
