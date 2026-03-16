@@ -360,8 +360,9 @@ def _dispatch(name: str, args: dict):
             [wx_pro, "radar-image", "--site", args["site"],
              "--product", args.get("product", "ref").lower(),
              "--ansi", "--ansi-mode", "block", "--ansi-width", str(args.get("width", 120))],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
-        ansi = result.stdout.decode("utf-8", errors="replace")
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        # wx-pro: ANSI goes to stderr, JSON metadata to stdout
+        ansi = result.stderr.decode("utf-8", errors="replace")
         if ansi.strip():
             Path("/tmp/wx_display.ansi").write_text(ansi)
             return {"rendered": True, "display_file": "/tmp/wx_display.ansi", "site": args["site"]}
