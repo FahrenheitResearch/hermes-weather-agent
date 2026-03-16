@@ -272,10 +272,13 @@ def _dispatch(name: str, args: dict):
                 "Precipitable Water": "pwat",
             }
             wx_var = var_map.get(variable, variable.lower().replace(" ", "_"))
-            result = subprocess.run(
-                [wx_pro, "model-image", "--model", model, "--var", wx_var,
-                 "--ansi", "--ansi-mode", "block", "--ansi-width", str(width)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            cmd = [wx_pro, "model-image", "--model", model, "--var", wx_var,
+                   "--ansi", "--ansi-mode", "block", "--ansi-width", str(width)]
+            # Regional crop if lat/lon specified
+            if args.get("lat") is not None and args.get("lon") is not None:
+                cmd.extend(["--lat", str(args["lat"]), "--lon", str(args["lon"]),
+                             "--radius-km", str(args.get("radius_km", 500))])
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
             ansi = result.stderr.decode("utf-8", errors="replace")
             if ansi.strip() and len(ansi) > 100:
                 Path("/tmp/wx_display.ansi").write_text(ansi)
