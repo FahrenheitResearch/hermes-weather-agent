@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -255,3 +256,36 @@ def build_dataset(config: dict) -> dict:
             "splits": {k: len(v) for k, v in splits.items()},
             "shape": manifest["shape"], "channels": len(channel_names),
             "time_minutes": round(elapsed / 60, 1)}
+
+
+# ── Background dataset building ────────────────────────────────────
+_build_state = {
+    "running": False,
+    "progress": "",
+    "result": None,
+}
+
+
+def get_build_status() -> dict:
+    return {k: v for k, v in _build_state.items()}
+
+
+def build_dataset_background(config: dict) -> dict:
+    """Start dataset building in background thread."""
+    if _build_state["running"]:
+        return {"error": "Build already in progress", **get_build_status()}
+
+    _build_state.update({"running": True, "progress": "starting...", "result": None})
+
+    def run():
+        try:
+            result = build_dataset(config)
+            _build_state["result"] = result
+        except Exception as e:
+            _build_state["result"] = {"error": str(e)}
+        finally:
+            _build_state["running"] = False
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return {"status": "started", "config": {k: v for k, v in config.items() if k != "derived_fields"}}

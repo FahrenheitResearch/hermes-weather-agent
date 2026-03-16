@@ -105,7 +105,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="wx_build_dataset",
-            description="Build a complete ML training dataset from weather model archives. Downloads data, extracts fields at standard pressure levels, computes derived fields (CAPE/shear/SRH) from native 3D data, normalizes, and creates train/val/test splits.",
+            description="Build a complete ML training dataset in the background. Downloads HRRR data, extracts fields, computes derived fields from native 3D data, normalizes, splits. Runs in background — use wx_build_status to check progress. Use wx_train to start training once complete.",
             inputSchema={"type": "object", "properties": {
                 "model": {"type": "string", "description": "hrrr, gfs, or rap"},
                 "start_date": {"type": "string", "description": "YYYY-MM-DD"},
@@ -151,6 +151,11 @@ async def list_tools() -> list[Tool]:
                 "lon": {"type": "number"},
                 "width": {"type": "integer", "default": 120},
             }, "required": ["lat", "lon"]},
+        ),
+        Tool(
+            name="wx_build_status",
+            description="Check status of background dataset build",
+            inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         Tool(
             name="wx_train",
@@ -222,8 +227,12 @@ def _dispatch(name: str, args: dict):
         return {"fields": list(results.keys()), "time_s": round(time.time() - t0, 2), "details": summary}
 
     elif name == "wx_build_dataset":
-        from tools.dataset import build_dataset
-        return build_dataset(args)
+        from tools.dataset import build_dataset_background
+        return build_dataset_background(args)
+
+    elif name == "wx_build_status":
+        from tools.dataset import get_build_status
+        return get_build_status()
 
     elif name == "wx_render_terminal":
         import os
