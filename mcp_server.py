@@ -330,25 +330,57 @@ def _dispatch(name: str, args: dict):
         from tools.data_fetch import fetch_radar_scan
         scan = fetch_radar_scan(args["site"], datetime.now(timezone.utc))
         if not scan: return {"error": f"No radar for {args['site']}"}
-        bin_path = ROOT / ".." / "rustmet-train" / "target" / "release" / "rustmet-train.exe"
-        if not bin_path.exists(): return {"error": "rustmet-train binary not found"}
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f: tmp = f.name
-        subprocess.run([str(bin_path), "render-ppi", "--input", str(scan), "--output", tmp,
-                        "--product", args.get("product", "DBZ"), "--size", "400", "--range-km", "230"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        from PIL import Image
-        img = np.array(Image.open(tmp)); import os; os.unlink(tmp)
-        ansi = rgba_to_ansi(img, img.shape[1], img.shape[0], args.get("width", 120))
-        print(ansi)
-        return {"rendered": True, "site": args["site"]}
+        # Find rustmet-train or wx-pro binary
+        import shutil
+        bin_path = None
+        for candidate in [
+            ROOT / ".." / "rustmet-train" / "target" / "release" / "rustmet-train.exe",
+            ROOT / ".." / "rustmet-train" / "target" / "release" / "rustmet-train",
+            Path("/tmp/rustmet/target/release/wx-pro"),
+            shutil.which("wx-pro"),
+        ]:
+            if candidate and Path(str(candidate)).exists():
+                bin_path = Path(str(candidate)); break
+        if not bin_path: return {"error": "No radar rendering binary found (need wx-pro or rustmet-train)"}
+        # Use wx-pro radar-image with ANSI output
+        wx_pro = None
+        for candidate in [
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx-pro.exe",
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx-pro",
+            Path("/tmp/rustmet/target/release/wx-pro"),
+            shutil.which("wx-pro"),
+        ]:
+            if candidate and Path(str(candidate)).exists():
+                wx_pro = str(candidate); break
+        if not wx_pro: return {"error": "wx-pro binary not found"}
+
+        result = subprocess.run(
+            [wx_pro, "radar-image", "--site", args["site"],
+             "--product", args.get("product", "ref").lower(),
+             "--ansi", "--ansi-mode", "block", "--ansi-width", str(args.get("width", 120))],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
+        ansi = result.stdout.decode("utf-8", errors="replace")
+        if ansi.strip():
+            print(ansi)
+            return {"rendered": True, "site": args["site"]}
+        return {"error": f"Radar render failed for {args['site']}"}
 
     elif name == "wx_sounding_terminal":
         import numpy as np, rustmet, subprocess, json as j
         from tools.ansi_render import rgba_to_ansi
         from PIL import Image
-        wx = ROOT / ".." / "rustmet" / "target" / "release" / "wx.exe"
-        r = subprocess.run([str(wx), "sounding", "--lat", str(args["lat"]), "--lon", str(args["lon"])],
+        import shutil
+        wx = None
+        for candidate in [
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx.exe",
+            ROOT / ".." / "rustmet" / "target" / "release" / "wx",
+            Path("/tmp/rustmet/target/release/wx"),
+            shutil.which("wx"),
+        ]:
+            if candidate and Path(str(candidate)).exists():
+                wx = str(candidate); break
+        if not wx: return {"error": "wx binary not found"}
+        r = subprocess.run([wx, "sounding", "--lat", str(args["lat"]), "--lon", str(args["lon"])],
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30)
         if r.returncode != 0: return {"error": "Sounding failed"}
         s = j.loads(r.stdout); levels = s["levels"]
