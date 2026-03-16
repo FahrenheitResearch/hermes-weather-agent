@@ -153,6 +153,21 @@ async def list_tools() -> list[Tool]:
             }, "required": ["lat", "lon"]},
         ),
         Tool(
+            name="wx_dataset_info",
+            description="Get info about a built dataset — size, samples, channels, splits, shape",
+            inputSchema={"type": "object", "properties": {
+                "dataset_dir": {"type": "string", "default": "/tmp/hrrr_week"},
+            }, "required": []},
+        ),
+        Tool(
+            name="wx_inference",
+            description="Run inference with a trained weather model checkpoint on a test sample. Reports MSE and MAE.",
+            inputSchema={"type": "object", "properties": {
+                "model_path": {"type": "string", "default": "/tmp/model/best_model.pt"},
+                "dataset_dir": {"type": "string", "default": "/tmp/hrrr_week"},
+            }, "required": []},
+        ),
+        Tool(
             name="wx_build_status",
             description="Check status of background dataset build",
             inputSchema={"type": "object", "properties": {}, "required": []},
@@ -462,6 +477,78 @@ def _dispatch(name: str, args: dict):
     elif name == "wx_train_stop":
         from tools.trainer import stop_training
         return stop_training()
+
+    elif name == "wx_dataset_info":
+        dataset_dir = args.get("dataset_dir", "/tmp/hrrr_week")
+        meta_path = Path(dataset_dir) / "metadata.json"
+        if not meta_path.exists():
+            return {"error": f"No dataset at {dataset_dir}"}
+        meta = json.loads(meta_path.read_text())
+        raw_count = len(list((Path(dataset_dir) / "raw").glob("*.npy"))) if (Path(dataset_dir) / "raw").exists() else 0
+        size_gb = sum(f.stat().st_size for f in Path(dataset_dir).rglob("*.npy")) / 1e9
+        return {
+            "path": dataset_dir,
+            "total_samples": meta.get("total_samples", 0),
+            "splits": meta.get("splits", {}),
+            "shape": meta.get("shape"),
+            "channels": meta.get("channel_names", []),
+            "num_channels": len(meta.get("channel_names", [])),
+            "raw_files": raw_count,
+            "size_gb": round(size_gb, 2),
+            "has_normalization": "normalization" in meta,
+        }
+
+    elif name == "wx_inference":
+        import torch, numpy as np
+        model_path = Path(args.get("model_path", "/tmp/model/best_model.pt"))
+        dataset_dir = args.get("dataset_dir", "/tmp/hrrr_week")
+        if not model_path.exists():
+            return {"error": f"No model at {model_path}"}
+        meta = json.loads((Path(dataset_dir) / "metadata.json").read_text())
+        channels = meta["shape"][0]
+        # Load model
+        from tools.trainer import SimpleUNet
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = SimpleUNet(channels).to(device)
+        model.load_state_dict(torch.load(str(model_path), map_location=device, weights_only=True))
+        model.eval()
+        # Load a test sample
+        test_path = Path(dataset_dir) / "test.json"
+        if test_path.exists():
+            pairs = json.loads(test_path.read_text())
+        else:
+            pairs = json.loads((Path(dataset_dir) / "train.json").read_text())
+        if not pairs:
+            return {"error": "No test samples"}
+        pair = pairs[0]
+        x = torch.from_numpy(np.load(pair["input"])).float()
+        y = torch.from_numpy(np.load(pair["target"])).float()
+        cy, cx = x.shape[1]//2, x.shape[2]//2
+        x = x[:, cy-128:cy+128, cx-128:cx+128].unsqueeze(0).to(device)
+        y = y[:, cy-128:cy+128, cx-128:cx+128].unsqueeze(0).to(device)
+        # Normalize
+        norm = meta.get("normalization", {})
+        mean = torch.tensor(norm.get("mean", [0]*channels), dtype=torch.float32).view(1, channels, 1, 1).to(device)
+        std = torch.tensor(norm.get("std", [1]*channels), dtype=torch.float32).view(1, channels, 1, 1).to(device)
+        x_norm = (x - mean) / std
+        y_norm = (y - mean) / std
+        noise = torch.randn_like(y_norm)
+        t = torch.tensor([[[[0.5]]]]).to(device)
+        noisy = y_norm * (1-t) + noise * t
+        with torch.no_grad():
+            pred = model(torch.cat([x_norm, noisy], dim=1))
+        mse = ((pred - y_norm)**2).mean().item()
+        mae = (pred - y_norm).abs().mean().item()
+        return {
+            "model_path": str(model_path),
+            "device": str(device),
+            "test_mse": round(mse, 6),
+            "test_mae": round(mae, 6),
+            "input_time": pair.get("input_time", ""),
+            "target_time": pair.get("target_time", ""),
+            "patch_size": "256x256",
+            "channels": channels,
+        }
 
     return {"error": f"Unknown tool: {name}"}
 
