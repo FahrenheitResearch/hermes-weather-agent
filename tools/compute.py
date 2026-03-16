@@ -38,11 +38,27 @@ def fetch_native_3d(model: str, run: str, fhour: int = 0) -> dict | None:
     Returns dict with temp_3d, qvapor_3d, height_3d, pres_3d, u_3d, v_3d,
     psfc, t2, q2, nx, ny, nz — all as numpy float64 arrays.
     """
+    import os
+
+    # Suppress rustmet download noise — redirect fd 2 to devnull for the
+    # duration of the fetch, then restore it so later logging still works.
+    _devnull = open(os.devnull, 'w')
+    _old_stderr = os.dup(2)
+    os.dup2(_devnull.fileno(), 2)
+
+    try:
+        return _fetch_native_3d_inner(model, run, fhour)
+    finally:
+        os.dup2(_old_stderr, 2)
+        os.close(_old_stderr)
+        _devnull.close()
+
+
+def _fetch_native_3d_inner(model, run, fhour):
+    import os
     import requests
     import tempfile
-    import os
     from datetime import datetime
-
     # Try native file first (wrfnatf)
     dt = datetime.strptime(run, "%Y-%m-%d/%Hz")
     fstr = f"{fhour:02d}"
@@ -157,6 +173,43 @@ def fetch_native_3d(model: str, run: str, fhour: int = 0) -> dict | None:
     }
 
 
+def _resolve_run(run: str) -> str:
+    """Resolve 'latest' to an actual run string.
+
+    Probes the NOMADS HRRR directory listing to find the most recent
+    date directory and the latest run hour within it.
+    """
+    if run != "latest":
+        return run
+
+    import re
+    import requests as req
+    from datetime import datetime, timedelta, timezone
+
+    base = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod"
+    now = datetime.now(timezone.utc)
+
+    for day_offset in range(2):
+        date = now - timedelta(days=day_offset)
+        date_str = date.strftime("%Y%m%d")
+        dir_url = f"{base}/hrrr.{date_str}/conus/"
+        try:
+            r = req.get(dir_url, timeout=15)
+            if not r.ok:
+                continue
+        except Exception:
+            continue
+
+        hours = sorted(set(re.findall(
+            r'hrrr\.t(\d{2})z\.wrf(?:sfc|prs|nat)f\d{2}\.grib2', r.text
+        )))
+        if hours:
+            return f"{date:%Y-%m-%d}/{hours[-1]}z"
+
+    fb = now - timedelta(hours=3)
+    return f"{fb:%Y-%m-%d}/{fb.hour:02d}z"
+
+
 def compute_derived(model: str, run: str, fields: list[str],
                     fhour: int = 0) -> dict[str, np.ndarray]:
     """Compute multiple derived fields from one model fetch.
@@ -166,6 +219,7 @@ def compute_derived(model: str, run: str, fields: list[str],
 
     Returns dict of field_name → numpy array (ny, nx).
     """
+    run = _resolve_run(run)
     data = fetch_native_3d(model, run, fhour)
     if data is None:
         return {}
@@ -217,7 +271,7 @@ def compute_derived(model: str, run: str, fields: list[str],
         if f.startswith("srh_"):
             top = int(f.split("_")[1]) * 1000
             results[f] = rustmet.compute_srh(
-                data["u_3d"], data["v_3d"], data["height_3d"], nx, ny, nz, 0, top
+                data["u_3d"], data["v_3d"], data["height_3d"], nx, ny, nz, top
             ).reshape(ny, nx).astype(np.float32)
 
     # STP — composed from CAPE + SRH + shear
@@ -232,7 +286,7 @@ def compute_derived(model: str, run: str, fields: list[str],
 
         srh = results.get("srh_01")
         if srh is None:
-            srh = rustmet.compute_srh(data["u_3d"], data["v_3d"], data["height_3d"], nx, ny, nz, 0, 1000)
+            srh = rustmet.compute_srh(data["u_3d"], data["v_3d"], data["height_3d"], nx, ny, nz, 1000)
         else:
             srh = srh.flatten()
         shear = results.get("shear_06")
@@ -242,7 +296,10 @@ def compute_derived(model: str, run: str, fields: list[str],
             shear = shear.flatten()
 
         results["stp"] = rustmet.compute_stp(
-            cape_arr.flatten(), lcl_arr, srh.flatten(), shear.flatten()
+            cape_arr.flatten().astype(np.float64),
+            lcl_arr.flatten().astype(np.float64) if hasattr(lcl_arr, 'astype') else np.array(lcl_arr, dtype=np.float64),
+            srh.flatten().astype(np.float64) if hasattr(srh, 'astype') else np.array(srh, dtype=np.float64),
+            shear.flatten().astype(np.float64) if hasattr(shear, 'astype') else np.array(shear, dtype=np.float64),
         ).reshape(ny, nx).astype(np.float32)
 
     return results

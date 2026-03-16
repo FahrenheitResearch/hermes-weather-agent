@@ -20,6 +20,16 @@ def rgba_to_ansi(pixels: np.ndarray, width: int, height: int, target_width: int 
     if pixels.ndim == 1:
         pixels = pixels.reshape(height, width, 4)
 
+    # Zero out RGB for transparent pixels so they contribute black (terminal
+    # background) instead of white during resize interpolation.  This fixes
+    # the white-fringe artifacts from RGBA (255,255,255,0) pixels outside
+    # the CONUS domain.
+    pixels = pixels.copy()
+    transparent = pixels[:, :, 3] < 10
+    pixels[transparent, 0] = 0
+    pixels[transparent, 1] = 0
+    pixels[transparent, 2] = 0
+
     # Resize to target width, maintaining aspect ratio
     scale = target_width / width
     new_w = target_width
@@ -27,13 +37,11 @@ def rgba_to_ansi(pixels: np.ndarray, width: int, height: int, target_width: int 
     # Make height even for half-block pairs
     new_h = new_h + (new_h % 2)
 
-    # Simple nearest-neighbor resize
-    img = np.zeros((new_h, new_w, 4), dtype=np.uint8)
-    for y in range(new_h):
-        sy = min(int(y / scale), height - 1)
-        for x in range(new_w):
-            sx = min(int(x / scale), width - 1)
-            img[y, x] = pixels[sy, sx]
+    # Use PIL for fast, clean resize
+    from PIL import Image
+    pil_img = Image.fromarray(pixels if pixels.ndim == 3 else pixels.reshape(height, width, 4))
+    pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
+    img = np.array(pil_img)
 
     lines = []
     for row in range(0, new_h, 2):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,21 @@ VAR_MAP = {
 def process_single_run(model: str, run: str, variables: list[str], levels: list[int],
                        surface_variables: list[str], derived_fields: list[str],
                        output_path: str) -> dict:
+    # Suppress rustmet download noise
+    import os
+    _devnull = open(os.devnull, 'w')
+    _old = os.dup(2)
+    os.dup2(_devnull.fileno(), 2)
+    try:
+        return _process_single_run_inner(model, run, variables, levels,
+                                         surface_variables, derived_fields, output_path)
+    finally:
+        os.dup2(_old, 2)
+        _devnull.close()
+
+
+def _process_single_run_inner(model, run, variables, levels,
+                              surface_variables, derived_fields, output_path):
     """Fetch one model run, extract fields + compute derived, save as numpy."""
     t0 = time.time()
     out = Path(output_path)
@@ -126,7 +142,7 @@ def build_dataset(config: dict) -> dict:
     freq = config.get("frequency_hours", 1)
     lead = config.get("lead_time_hours", 1)
     out_dir = Path(config["output_dir"])
-    workers = config.get("workers", 4)
+    workers = config.get("workers", 8)
     limit = config.get("limit")
 
     raw_dir = out_dir / "raw"
@@ -161,9 +177,12 @@ def build_dataset(config: dict) -> dict:
             r = future.result()
             (results if r["status"] in ("ok", "cached") else errors).append(r)
             done = len(results) + len(errors)
-            if done % 50 == 0:
-                elapsed = time.time() - t0
-                print(f"  [{done}/{len(runs)}] ok={len(results)} err={len(errors)} [{done/elapsed*60:.0f}/min]")
+            elapsed = time.time() - t0
+            rate = done / elapsed * 60 if elapsed > 0 else 0
+            eta = (len(runs) - done - len([x for x in results if x.get("status") == "cached"])) / rate if rate > 0 else 0
+            sys.stdout.write(f"\r  [{done}/{len(runs)}] ok={len(results)} err={len(errors)} [{rate:.0f}/min ETA {eta:.0f}m]   ")
+            sys.stdout.flush()
+        print()
 
     # Phase 2: Build pairs
     run_to_file = {}
