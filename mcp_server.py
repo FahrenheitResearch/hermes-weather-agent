@@ -321,14 +321,7 @@ def _dispatch(name: str, args: dict):
 
         ansi = rgba_to_ansi(np.array(img), img.width, img.height, width)
         # Print directly — never return ANSI in the result (it's 500KB+ of escape codes)
-        # Write ANSI directly to terminal, bypassing MCP stdio pipe
-        try:
-            with open("/dev/tty", "w") as tty:
-                tty.write(ansi + "\n")
-                tty.flush()
-        except Exception:
-            pass  # fallback: just return the metadata
-        return {"rendered": True, "variable": variable, "run": run, **extra}
+        return {"rendered": True, "ansi_art": ansi, "variable": variable, "run": run, **extra}
 
     elif name == "wx_radar_terminal":
         import numpy as np, subprocess
@@ -367,12 +360,7 @@ def _dispatch(name: str, args: dict):
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
         ansi = result.stdout.decode("utf-8", errors="replace")
         if ansi.strip():
-            try:
-                with open("/dev/tty", "w") as tty:
-                    tty.write(ansi + "\n"); tty.flush()
-            except Exception:
-                pass
-            return {"rendered": True, "site": args["site"]}
+            return {"rendered": True, "ansi_art": ansi, "site": args["site"]}
         return {"error": f"Radar render failed for {args['site']}"}
 
     elif name == "wx_sounding_terminal":
@@ -402,12 +390,7 @@ def _dispatch(name: str, args: dict):
         raw = rustmet.render_skewt(p, t, td, wind_speed=ws, wind_dir=wd, width=400, height=400)
         img = Image.frombytes("RGBA", (400, 400), bytes(raw))
         ansi = rgba_to_ansi(np.array(img), 400, 400, args.get("width", 120))
-        try:
-            with open("/dev/tty", "w") as tty:
-                tty.write(ansi + "\n"); tty.flush()
-        except Exception:
-            pass
-        return {"rendered": True, "indices": s.get("indices", {})}
+        return {"rendered": True, "ansi_art": ansi, "indices": s.get("indices", {})}
 
     elif name == "wx_train":
         from tools.trainer import start_training
