@@ -191,6 +191,7 @@ class SimpleUNet(object):
 
     def __new__(cls, channels):
         if cls._cls is None:
+            import torch
             import torch.nn as nn
             class _UNet(nn.Module):
                 def __init__(self, channels):
