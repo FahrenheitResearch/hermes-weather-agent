@@ -148,10 +148,13 @@ def run_agent(user_input: str, api_key: str):
 
 
 def interactive_loop(api_key: str):
-    """Interactive chat loop."""
+    """Interactive chat loop — supports background training."""
     print("\033[1;36m=== Hermes Weather Agent ===\033[0m")
-    print("Ask me about weather, radar, soundings, or building training datasets.")
+    print("Weather data, radar, soundings, training datasets, and model training.")
+    print("Training runs in the background — keep asking questions while it trains.")
     print("Type 'quit' to exit.\n")
+
+    messages_history = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     while True:
         try:
@@ -160,6 +163,7 @@ def interactive_loop(api_key: str):
             break
         if not user_input or user_input.lower() in ("quit", "exit", "q"):
             break
+        # Each command is independent — fresh context but training persists in background
         run_agent(user_input, api_key)
 
 

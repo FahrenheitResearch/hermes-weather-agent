@@ -152,6 +152,27 @@ async def list_tools() -> list[Tool]:
                 "width": {"type": "integer", "default": 120},
             }, "required": ["lat", "lon"]},
         ),
+        Tool(
+            name="wx_train",
+            description="Start training a UNet diffusion weather model in the background. Runs on GPU if available. Prints epoch progress with loss sparkline to terminal. You can continue using other tools while training runs.",
+            inputSchema={"type": "object", "properties": {
+                "dataset_dir": {"type": "string", "description": "Path to dataset built by wx_build_dataset"},
+                "output_dir": {"type": "string", "description": "Where to save model checkpoints", "default": "./model_output"},
+                "epochs": {"type": "integer", "default": 50},
+                "lr": {"type": "number", "default": 0.001},
+                "batch_size": {"type": "integer", "default": 4},
+            }, "required": ["dataset_dir"]},
+        ),
+        Tool(
+            name="wx_train_status",
+            description="Check the status of background training (epoch, loss, best loss)",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        Tool(
+            name="wx_train_stop",
+            description="Stop background training",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
     ]
 
 
@@ -332,6 +353,24 @@ def _dispatch(name: str, args: dict):
         ansi = rgba_to_ansi(np.array(img), 400, 400, args.get("width", 120))
         print(ansi)
         return {"rendered": True, "indices": s.get("indices", {})}
+
+    elif name == "wx_train":
+        from tools.trainer import start_training
+        return start_training(
+            dataset_dir=args["dataset_dir"],
+            output_dir=args.get("output_dir", "./model_output"),
+            epochs=args.get("epochs", 50),
+            lr=args.get("lr", 1e-3),
+            batch_size=args.get("batch_size", 4),
+        )
+
+    elif name == "wx_train_status":
+        from tools.trainer import get_training_status
+        return get_training_status()
+
+    elif name == "wx_train_stop":
+        from tools.trainer import stop_training
+        return stop_training()
 
     return {"error": f"Unknown tool: {name}"}
 
