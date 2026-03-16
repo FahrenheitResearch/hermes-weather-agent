@@ -448,7 +448,16 @@ def _dispatch(name: str, args: dict):
 
     elif name == "wx_train_status":
         from tools.trainer import get_training_status
-        return get_training_status()
+        status = get_training_status()
+        # Also check the background train log
+        log_path = Path("/tmp/train.log")
+        if log_path.exists():
+            lines = log_path.read_text().strip().split("\n")
+            epoch_lines = [l for l in lines if "[Epoch" in l]
+            if epoch_lines:
+                status["latest_epochs"] = epoch_lines[-5:]
+                status["total_logged_epochs"] = len(epoch_lines)
+        return status
 
     elif name == "wx_train_stop":
         from tools.trainer import stop_training
