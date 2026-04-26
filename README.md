@@ -1,92 +1,250 @@
 # Hermes Weather Agent
 
-MCP tool server that lets AI agents autonomously build weather model training datasets, compute derived meteorological fields, and visualize weather data in the terminal.
+**An MCP plugin that turns an AI agent into a meteorology research instrument.**
 
-## What It Does
+Hermes Weather Agent drives [`rustwx`](https://github.com/FahrenheitResearch/rustwx) — a pure-Rust weather workspace — end-to-end from a Hermes Agent / Claude / any MCP-speaking client. Two equally first-class paths:
 
-An AI agent says **"build me a training dataset from HRRR data with native SB3CAPE"** and the tools handle everything:
+1. **Consumer / Pivotal-Weather replacement.** Prompt for any HRRR / GFS / RRFS-A / ECMWF product over any city, region, or CONUS — get a publication-quality PNG. No more clicking through someone else's dashboard.
+2. **Meteorology research agent.** Full-parcel ECAPE maps, profile sweeps, plume-object analysis, ratio products with magnitude masks. Five first-class research tracks (below) backed by per-grid-hour processed outputs.
 
-1. **Mass downloads** HRRR/GFS/RAP data with selective idx-based fetching (only the fields you need)
-2. **Computes derived fields** like SB3CAPE from full 50-level 3D native data — not the model's pre-computed approximation
-3. **Renders weather data** to terminal using high-quality ANSI art (radar, model fields, soundings)
-4. **Builds normalized datasets** with train/val/test splits ready for ML training
+The compute and rendering live in `rustwx`. PNG output goes through the pure-Rust `rustwx-render` contour engine — no matplotlib for maps, no ANSI rendering, no Python in the hot path. WRF NetCDF4 reads use `netcrust` (pure-Rust, feature-gated) so **no `netcdf.dll` runtime is required for the standard agent workflows.**
 
-## Why This Matters
+## Why this matters
 
-### Native 3D CAPE vs Model Output
+* **Full-parcel ECAPE maps at HRRR-grid scale.** As far as we can tell, this is the first publicly available tool that produces ECAPE *maps* — not just sounding-scale ECAPE — using full parcel-path entraining-CAPE calculations. Validated to within **0.04 J/kg of `ecape-parcel`** across all 12 SB/ML/MU × entraining/non-entraining × pseudo/irreversible combinations on real HRRR profiles.
+* **Sub-millisecond per profile** in Rust (`0.45–0.65 ms`). 5,600–13,000× faster than the Python `ecape-parcel` reference (2.8–6.1 s/config). Source: ECAPE-RS validation paper, April 2026.
+* **Full-CONUS HRRR ECAPE in ~17 s** per forecast hour (272,955 cells, ~15,400 cells/s). Previously impractical at this scale.
+* **Catalog discovery.** 100+ products with status/maturity/runner/per-model support metadata, queried live from `rustwx product_catalog`. The agent picks recipes the model actually supports instead of guessing.
 
-The CAPE that comes in HRRR output files is computed by the model using internal shortcuts. When you compute it yourself from the full 3D temperature/moisture/pressure fields:
+## What an agent can do with this
 
-- **Consistent** across model versions (HRRR v3→v4 changed their CAPE computation)
-- **Configurable** — mixed-layer, most-unstable, or surface-based with custom integration limits
-- **Accurate** — full parcel integration through all 50 native levels, not sigma-level approximations
+```
+"Render MLECAPE and 0–3 km SRH over the southern plains for the latest HRRR."
+"Pull the ECAPE/CAPE ratio map for the gulf-to-kansas region right now."
+"Probe the ECAPE profile at Norman, OK at the latest f01."
+"Cross-section theta-e from Amarillo to Chicago at f06."
+"What does the latest CONUS QPF look like at f24?"
 
-### Speed
+# Research:
+"Run a 50-profile random sweep across the southern plains over the last 3 days."
+"Run the curated stress profile suite at the latest cycle and give me the
+   worst-case parcel timings."
+"Build a 7-day dataset of MLECAPE / SRH 0-3 / STP renders for southern-plains."
+"What's currently in the cache, and what would a 400 GB eviction free?"
+```
 
-| Operation | MetPy | metrust | Speedup |
-|---|---|---|---|
-| SBCAPE (full CONUS, 1.9M points × 50 levels) | ~30+ minutes | **2 seconds** | **~900x** |
-| GRIB2 parse (700MB file) | ~8s (cfgrib) | **0.7s** (rustmet) | **11x** |
-| 1 year hourly HRRR dataset | ~17 days | **2-4 hours** | **~100x** |
+## Five first-class research tracks
 
-## MCP Tools
+The processed per-grid-hour outputs include object/component and report-overlap tables for every standard mask (`ml_cape_ge_500/1000/1500/2000`, `ml_ecape_ge_500/1000/1500/2000`, `ml_ecape_ehi03_ge_0p5/1/2/3`, `ratio_high_*`, `ratio_low_*`, plus high-end and warm-sector combos). That makes the following directly answerable:
 
-| Tool | Description |
-|---|---|
-| `wx_models` | List available models, levels, derived fields |
-| `wx_fetch` | Fetch model data for a specific run |
-| `wx_compute` | Compute derived fields (CAPE, shear, SRH, STP) from native 3D data |
-| `wx_build_dataset` | Build complete ML training dataset with normalization + splits |
-| `wx_render_terminal` | Render weather fields as ANSI terminal art |
-| `wx_radar_terminal` | Render NEXRAD radar PPI to terminal |
-| `wx_sounding_terminal` | Render atmospheric sounding to terminal |
+1. **ECAPE vs CAPE plume efficiency.** Compare report capture vs area burden between MLCAPE-based and MLECAPE-based plumes. Are entrainment-aware diagnostics actually finding the storm-scale signal more efficiently?
+2. **ECAPE-EHI threshold behavior.** Thresholds 0.5 / 1 / 2 / 3 are emitted by default. How does report capture rate scale with threshold for ECAPE-EHI vs analytic-EHI?
+3. **Hard-null / random baseline burden.** Random-cycle f003 batches give the false-area background — quantify how much area each threshold flags in null cases.
+4. **Connected plume-object research.** Component tables ship with object area, centroid, bounds, and largest-component rank. Persistence, displacement, and report-overlap by object follow.
+5. **Ratio-map caution.** ECAPE/CAPE ratio masks are generated *with* magnitude constraints baked in — the paper's caveat (ratios are misleading without a CAPE/ECAPE magnitude mask) is enforced by default.
 
-## Quick Start
+This is strong for exploratory and product-triage research, not yet calibrated forecast skill. Calibration is downstream of the verification work these tools enable.
+
+## Install
+
+`rustwx` will be on PyPI shortly. Until then, two steps:
 
 ```bash
-pip install rustmet metrust numpy Pillow requests
+# 1. Plugin (pure Python, light dependencies)
+pip install git+https://github.com/FahrenheitResearch/hermes-weather-agent.git
 
-# List tools
-python mcp_server.py --list
+# 2. rustwx binaries (Rust toolchain handles everything else)
+git clone https://github.com/FahrenheitResearch/rustwx
+cd rustwx
+cargo build --release \
+  --bin rustwx-cli \
+  --bin product_catalog \
+  --bin direct_batch \
+  --bin derived_batch \
+  --bin hrrr_direct_batch \
+  --bin hrrr_derived_batch \
+  --bin hrrr_windowed_batch \
+  --bin heavy_panel_hour \
+  --bin hrrr_ecape_ratio_display \
+  --bin hrrr_ecape_grid_research \
+  --bin hrrr_ecape_profile_probe \
+  --bin cross_section_proof \
+  --bin forecast_now \
+  --bin hrrr_dataset_export
 
-# Self-test (fetches real data, computes CAPE, renders to terminal)
-python mcp_server.py --test
-
-# Run as MCP server
-python mcp_server.py
+export HERMES_RUSTWX_BIN_DIR="$(pwd)/target/release"
 ```
 
-## Example: Agent Builds a Training Dataset
+Then verify everything is reachable:
+
+```bash
+weather-mcp --doctor
+```
+
+You should see every binary discovered, `product_catalog_loaded: true`, and `missing_critical: []`. If anything is missing, set `HERMES_RUSTWX_BIN_DIR` to your rustwx `target/release/` directory.
+
+> **Windows note:** if you've previously installed the standalone `netCDF for Windows` package, the plugin works without it — current rustwx builds use `netcrust` (pure-Rust) for any NetCDF needed. No `netcdf.dll` PATH manipulation required.
+
+## Configure
+
+```yaml
+# Hermes Agent — ~/.hermes/config.yaml
+mcp_servers:
+  weather:
+    command: weather-mcp
+    env:
+      HERMES_RUSTWX_BIN_DIR: /path/to/rustwx/target/release
+      HERMES_CACHE_DIR: /path/to/weather-cache         # default: ./cache/rustwx
+      HERMES_OUT_DIR:   /path/to/weather-outputs       # default: ./outputs
+```
+
+```json
+// Claude Desktop / generic MCP — claude_desktop_config.json
+{
+  "mcpServers": {
+    "weather": {
+      "command": "weather-mcp",
+      "env": { "HERMES_RUSTWX_BIN_DIR": "/path/to/rustwx/target/release" }
+    }
+  }
+}
+```
+
+## CLI
+
+```bash
+weather-mcp --list      # every MCP tool with one-line descriptions
+weather-mcp --doctor    # binary discovery + product catalog state
+weather-mcp --test      # smoke-test render
+```
+
+## Tools (28 total)
+
+### Discovery
+| Tool | Purpose |
+|---|---|
+| `wx_models` | Available models, sources, products, forecast horizons |
+| `wx_products` | **Live product catalog** — 100+ entries with status/maturity/runners/per-model support |
+| `wx_recipes` | Compact recipe summary (live with fallback mirror) |
+| `wx_regions` | rustwx region presets |
+| `wx_doctor` | Local install diagnostics |
+| `wx_latest` | Resolve the latest available run for a model |
+
+### Direct & derived rendering
+| Tool | Purpose |
+|---|---|
+| `wx_render_recipe` | Render any combination of direct / derived / windowed / heavy recipes (auto-routes to the right binary) |
+| `wx_cape` | SBCAPE / MLCAPE / MUCAPE shortcut |
+| `wx_ecape` | First-class ECAPE map (sbecape / mlecape / muecape) |
+| `wx_srh` | 0-1 km or 0-3 km SRH |
+| `wx_shear` | 0-1 km or 0-6 km bulk shear |
+| `wx_stp` | Fixed-layer Significant Tornado Parameter |
+| `wx_windowed` | Time-window products: QPF (1/6/12/24h, total) and 2-5 km UH (1h/3h/run-max) |
+| `wx_severe_panel` | Multi-product severe + ECAPE plate from one shared heavy thermo load |
+
+### ECAPE specialists
+| Tool | Purpose |
+|---|---|
+| `wx_ecape_profile` | Per-profile ECAPE diagnostics at a (lat, lon) — sub-millisecond Rust solver |
+| `wx_ecape_grid` | Full-grid ECAPE research over a swath (background) |
+| `wx_ecape_ratio_map` | MLECAPE filled + ECAPE/CAPE ratio contours w/ magnitude mask |
+
+### Vertical / observations
+| Tool | Purpose |
+|---|---|
+| `wx_cross_section` | Vertical cross section through model fields (route presets or city pairs) |
+| `wx_radar` | Fetch nearest NEXRAD Level 2 scan |
+| `wx_sounding` | Skew-T at (lat, lon) — temporary matplotlib renderer until rustwx-sounding ships a CLI |
+
+### Research mode
+| Tool | Purpose |
+|---|---|
+| `wx_research_profile_sweep` | Multi-point ECAPE sweep across (point × date × cycle × fhour). Modes: `targets` / `random` / `stress`. Aggregated CSV with timing breakdown |
+| `wx_build_dataset` | Multi-day batch renders or profile probes (background) |
+
+### Cache & jobs
+| Tool | Purpose |
+|---|---|
+| `wx_cache_status` | Disk usage + top consumers + per-subdir totals |
+| `wx_cache_evict` | LRU eviction to bring cache below `target_gb` (dry-run by default) |
+| `wx_job_status` / `wx_job_list` / `wx_job_cancel` | Background-job control |
+
+## Showcase gallery
+
+The repo ships a one-shot script that exercises every tool against a single canonical run, captures per-call timing, and emits a self-contained HTML gallery:
+
+```bash
+python examples/showcase_full.py        # ~3 min with warm cache, ~5 min cold
+python examples/showcase_html.py        # builds outputs/showcase/index.html
+```
+
+Last full run produced **198 PNGs across 28 successful tool calls in 207 s**, organised into 17 sections (HRRR direct/derived/windowed/severe, ECAPE specialists, multi-model GFS, cross sections, radar, sounding, research-mode profile sweep, mini dataset, cache management). Open `outputs/showcase/index.html` after running.
+
+Top wall-time consumers from the canonical run:
+
+```
+42.7 s  HRRR derived  — 44 recipes / one shared decode    72 PNGs
+41.3 s  HRRR severe panel (heavy_panel_hour)              24 PNGs
+35.1 s  ECAPE/CAPE ratio display (background)              6 PNGs
+ 8.0 s  mini research dataset (1 cycle × 2 recipes)
+ 7.9 s  HRRR windowed — 8 QPF/UH products                  6 PNGs
+ 6.6 s  HRRR direct — 52 recipes / one shared decode      72 PNGs
+ 6.6 s  ECAPE grid research (background)
+ 5.9 s  stress profile sweep (10 curated points)
+ 5.1 s  GFS derived (sbcape/mucape/lapse)                  6 PNGs
+ 4.7 s ×5  cross sections (4 routes + 1 city pair)
+```
+
+The HRRR direct + derived passes each render dozens of products from one shared thermodynamic decode — that's where the per-product cost approaches zero.
+
+## Programmatic use (without an LLM)
+
+Every tool is also a plain Python function:
 
 ```python
-# Agent calls wx_build_dataset:
-{
-    "model": "hrrr",
-    "start_date": "2024-01-01",
-    "end_date": "2024-12-31",
-    "variables": ["TMP", "UGRD", "VGRD", "SPFH", "HGT"],
-    "levels": "13",
-    "derived_fields": ["sb3cape", "shear_06", "srh_03"],
-    "frequency_hours": 1,
-    "lead_time_hours": 1,
-    "output_dir": "/data/hrrr_training",
-    "workers": 8
-}
+from hermes_weather.rustwx import discover
+from hermes_weather.tools import render, ecape, cross_section, catalog
 
-# Result: 8,760 samples, each (C, 1059, 1799) with:
-# - 5 vars × 13 levels = 65 upper-air channels
-# - 4 surface channels
-# - 3 derived channels (SB3CAPE, 0-6km shear, 0-3km SRH)
-# - Per-channel normalization stats
-# - 80/10/10 train/val/test split
+env = discover()
+
+# Single first-class ECAPE map
+out = render.ecape(env, parcel="ml", region="southern-plains",
+                   run_str="latest", forecast_hour=0)
+print(out["pngs"])
+
+# Per-profile ECAPE in <1ms (Rust kernel)
+prof = ecape.profile(env, location="Norman, OK",
+                     run_str="latest", forecast_hour=1,
+                     include_input_column=True)
+print(prof["diagnostics"]["parcels"][1]["ratio_ecape_to_undiluted_cape"])
+
+# Vertical cross section, custom city pair
+xs = cross_section.cross_section(
+    env, product="theta-e",
+    start="Amarillo, TX", end="Chicago, IL",
+    run_str="latest", forecast_hour=6,
+)
+
+# Discover what every recipe is and where it works
+products = catalog.products(env, kind="derived", search="ecape")
+for p in products["products"]:
+    supported_models = [s["model"] for s in p["support"] if s["status"] == "supported"]
+    print(f"{p['slug']:35s} {p['maturity']:14s} {supported_models}")
 ```
 
-## Built With
+## Speed reality check (ECAPE-RS validation paper, April 2026)
 
-- **[rustmet](https://github.com/FahrenheitResearch/rustmet)** — Rust GRIB2 parser with streaming decode and selective download
-- **[metrust](https://github.com/FahrenheitResearch/metrust-py)** — Drop-in MetPy replacement in Rust, 150/150 functions, 10-93,000x faster
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — MCP-compatible AI agent framework
+| Operation | Python (`ecape-parcel` + MetPy) | Rust (`rustwx-calc`) | Speedup |
+|---|---|---|---|
+| ECAPE per HRRR profile (one parcel/config) | 2.8–6.1 s | 0.45–0.65 ms | **5,600–13,000×** |
+| ECAPE full-grid (272,955 HRRR cells / forecast hour) | impractical | 17.6–18.4 s | — |
+
+Per-profile ECAPE is essentially free; full-grid is the heavy one. Heavy tools (`wx_ecape_grid`, `wx_ecape_ratio_map` for CONUS, `wx_research_profile_sweep` over many cycles) run as background jobs. Profile-sweep results separate `raw_fetch_s` / `profile_extract_s` / `parcel_solver_s` / `render_s` so you can attribute time honestly.
 
 ## License
 
-MIT
+MIT.
+
+## Acknowledgements
+
+Built on top of [`rustwx`](https://github.com/FahrenheitResearch/rustwx) (Rust meteorology workspace, Fahrenheit Research) and the public `ecape-parcel` reference implementation. Validation methodology described in *Validation and Acceleration of an ecape-parcel-Compatible Solver for HRRR-Scale Entraining-CAPE Diagnostics*, ECAPE-RS Project, April 2026.

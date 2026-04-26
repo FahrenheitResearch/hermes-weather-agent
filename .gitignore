@@ -1,10 +1,23 @@
+# Python
 .env
 __pycache__/
 *.pyc
+*.pyo
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Plugin runtime artefacts
 cache/
+outputs/
 *.npy
+*.grib2
 demo_dataset/
 hrrr_diffusion_dataset/
+
+# Claude Code local state
+.claude/

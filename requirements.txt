@@ -1,5 +1,0 @@
-rustmet>=0.1.0
-metrust>=0.3.5
-numpy
-Pillow
-requests
