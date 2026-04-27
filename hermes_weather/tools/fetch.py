@@ -13,7 +13,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..rustwx import RustwxEnv, parse_run, resolve_latest_run, run_json
+import json
+import subprocess
+
+from ..rustwx import RustwxEnv, parse_run, resolve_latest_run
+
+
+def _run_json(env: RustwxEnv, binary: str, args: list[str], *, timeout: int = 60):
+    exe = env.require_binary(binary)
+    proc = subprocess.run(
+        [str(exe), *args], env=env.subprocess_env(),
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"{binary} {args} failed (rc={proc.returncode}): {proc.stderr.strip()[:400]}"
+        )
+    out = proc.stdout.strip()
+    if not out:
+        return {}
+    return json.loads(out)
 
 
 def fetch(
@@ -29,7 +48,7 @@ def fetch(
     cache_dir: str | None = None,
     full: bool = False,
 ) -> dict:
-    if not env.has("rustwx-cli"):
+    if not env.has_binary("rustwx-cli"):
         return {
             "ok": False,
             "error": (
@@ -60,7 +79,7 @@ def fetch(
     args.extend(["--cache-dir", cdir])
 
     try:
-        result = run_json(env, "rustwx-cli", args, timeout=600)
+        result = _run_json(env, "rustwx-cli", args, timeout=600)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -84,11 +103,11 @@ def fetch(
 def latest(env: RustwxEnv, *, model: str = "hrrr") -> dict:
     """Return the latest available run for a model. Uses rustwx-cli if
     present, otherwise probes NOMADS directly."""
-    if env.has("rustwx-cli"):
+    if env.has_binary("rustwx-cli"):
         try:
             from datetime import datetime, timezone
             today = datetime.now(timezone.utc).strftime("%Y%m%d")
-            result = run_json(env, "rustwx-cli", ["latest", model, today])
+            result = _run_json(env, "rustwx-cli", ["latest", model, today])
             return {"ok": True, "model": model, "latest": result, "source": "rustwx-cli"}
         except Exception:
             pass

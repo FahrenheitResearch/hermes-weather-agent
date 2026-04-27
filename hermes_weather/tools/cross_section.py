@@ -1,12 +1,9 @@
-"""Cross-section tool — vertical slices through model fields.
+"""Cross-section tool — optional binary path until rustwx ships a Python API.
 
-Wraps `cross_section_proof`, which renders rustwx-cross-section output as
-PNG. Accepts either a route preset (amarillo-chicago, kansas-city-chicago,
-san-francisco-tahoe, etc.) or explicit start/end lat-lon.
-
-Products: temperature, relative-humidity, specific-humidity, theta-e,
-wind-speed, wet-bulb, vapor-pressure-deficit, dewpoint-depression,
-moisture-transport, fire-weather.
+`rustwx.normalize_cross_section_request_json` exists but is a request
+normaliser, not a renderer. Until rustwx exposes a one-shot fetch+render
+Python API, this tool subprocess-calls the optional `cross_section_proof`
+binary.
 """
 from __future__ import annotations
 
@@ -22,8 +19,8 @@ def cross_section(
     *,
     product: str = "temperature",
     route: str | None = None,
-    start: str | dict | tuple | None = None,
-    end: str | dict | tuple | None = None,
+    start=None,
+    end=None,
     model: str = "hrrr",
     run_str: str = "latest",
     forecast_hour: int = 0,
@@ -34,30 +31,26 @@ def cross_section(
     out_dir: str | None = None,
     timeout: int = 600,
 ) -> dict:
-    """Render a vertical cross section. Supply either `route` OR (start, end).
-
-    `start`/`end` accept any form resolve_location() understands (city
-    name, lat/lon string, dict, tuple).
-    """
     binary = "cross_section_proof"
-    if not env.has(binary):
-        return {"ok": False, "error": f"{binary} binary not built"}
-
+    if not env.has_binary(binary):
+        return {
+            "ok": False,
+            "error": (
+                f"{binary} binary not built. The cross-section renderer "
+                "isn't in the agent-v1 contract yet. Build with: "
+                f"cargo build --release --bin {binary}"
+            ),
+        }
     if product not in CROSS_SECTION_PRODUCTS:
-        return {"ok": False, "error": f"unknown product {product!r}. "
-                                       f"Choose from: {CROSS_SECTION_PRODUCTS}"}
-
+        return {"ok": False, "error": f"unknown product {product!r}",
+                "available": CROSS_SECTION_PRODUCTS}
     if route is not None and route not in CROSS_SECTION_ROUTES:
-        return {"ok": False, "error": f"unknown route {route!r}. "
-                                       f"Choose from: {CROSS_SECTION_ROUTES}"}
+        return {"ok": False, "error": f"unknown route {route!r}",
+                "available": CROSS_SECTION_ROUTES}
 
     custom_pts = (start is not None and end is not None)
     if not route and not custom_pts:
-        route = "amarillo-chicago"  # binary default
-
-    if model != "hrrr":
-        # cross_section_proof supports any model; default source is nomads.
-        pass
+        route = "amarillo-chicago"
 
     date, cycle = (resolve_latest_run(model) if run_str == "latest" else parse_run(run_str))
     out_root = Path(out_dir) if out_dir else (
@@ -96,12 +89,8 @@ def cross_section(
     result = run(env, binary, args, out_dir=out_root, timeout=timeout)
     return {
         "ok": result.ok,
-        "model": model,
-        "product": product,
-        "route": route,
-        "date": date,
-        "cycle": cycle,
-        "forecast_hour": forecast_hour,
+        "model": model, "product": product, "route": route,
+        "date": date, "cycle": cycle, "forecast_hour": forecast_hour,
         "out_dir": str(out_root),
         "pngs": [str(p) for p in result.pngs],
         "png_count": len(result.pngs),

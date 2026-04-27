@@ -1,13 +1,22 @@
-"""rustwx subprocess layer — binary discovery + safe execution.
+"""rustwx integration layer.
 
-Each rustwx-cli proof binary (`derived_batch`, `direct_batch`,
-`hrrr_ecape_ratio_display`, `cross_section_proof`, `forecast_now`, etc.) is
-its own standalone executable. This module finds them, sets up the right
-environment, invokes them with timeouts, and harvests PNG outputs plus JSON
-manifests from `--out-dir`.
+The plugin's primary path is the rustwx Python API (agent-v1 contract):
 
-The main `rustwx-cli` binary (registry/fetch) is treated as optional — if
-absent, model and recipe catalogs fall back to a hard-coded mirror.
+    pip install rustwx>=0.4
+    import rustwx
+    rustwx.agent_capabilities_json()
+    rustwx.list_domains_json()
+    rustwx.render_maps_json(request_json)
+
+That covers all map rendering — direct, light derived, heavy ECAPE, and
+HRRR windowed products — with no Rust toolchain on the user's machine.
+
+A handful of specialty paths (sounding, cross sections, single-point
+ECAPE profile probe, full-grid ECAPE research swath) aren't in the
+formal agent-v1 contract yet. Those tools fall back to optional rustwx
+proof binaries discovered on disk via HERMES_RUSTWX_BIN_DIR / PATH; if
+the binaries aren't built, the corresponding MCP tools degrade with a
+clear error rather than crashing the server.
 """
 from __future__ import annotations
 
@@ -19,42 +28,23 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 IS_WINDOWS = platform.system() == "Windows"
 EXE = ".exe" if IS_WINDOWS else ""
 
-# Proof binaries we wrap as MCP tools. Order is informational — discovery
-# walks all of them and reports which exist.
-KNOWN_BINARIES = [
-    # registry / discovery
-    "rustwx-cli",                  # model & source registry, idx-byte-range fetch
-    "product_catalog",             # live product inventory (109+ products)
-    # multi-model rendering
-    "direct_batch",                # direct GRIB recipes (any registered model)
-    "derived_batch",               # derived thermodynamic recipes (any model)
-    # HRRR-specialised rendering
-    "hrrr_direct_batch",           # HRRR-only direct (superset of direct_batch)
-    "hrrr_derived_batch",          # HRRR-only derived (full ECAPE recipe set)
-    "hrrr_windowed_batch",         # QPF / UH time-window products
-    # heavy multi-product panels
-    "heavy_panel_hour",            # severe + ECAPE families from one heavy load
-    "hrrr_severe_proof",           # severe-weather proof gallery
-    # ECAPE first-class binaries
-    "hrrr_ecape_ratio_display",    # MLECAPE + ECAPE/CAPE ratio display
-    "hrrr_ecape_grid_research",    # full-grid ECAPE research over a swath
-    "hrrr_ecape_profile_probe",    # point ECAPE diagnostics
-    # vertical / orchestration
-    "cross_section_proof",         # vertical cross sections
-    "forecast_now",                # multi-model multi-hour orchestrator
-    "production_runner",           # operational scheduler
-    # dataset / region helpers
-    "hrrr_dataset_export",         # ML-friendly HRRR dataset export
-    "hrrr_us_region_hours",        # parallel multi-region multi-hour runs
-    "hrrr_region_city_gallery",    # city-centred crops for a region
-    "non_ecape_hour",              # all-model non-ECAPE hour pass (legacy fallback)
+# Optional proof binaries used only when an MCP tool's path isn't covered
+# by the agent-v1 contract yet. None of these are required for the bulk
+# of the plugin (maps, ECAPE, windowed, heavy panels).
+OPTIONAL_BINARIES = [
+    "sounding_plot",                 # native skew-T renderer
+    "cross_section_proof",           # vertical cross sections
+    "hrrr_ecape_profile_probe",      # single-point ECAPE diagnostics
+    "hrrr_ecape_grid_research",      # swath-scale ECAPE statistics
+    "hrrr_ecape_ratio_display",      # legacy ratio panel (render_maps_json now covers single recipes)
+    "rustwx-cli",                    # legacy registry CLI
 ]
 
-# Common install locations searched when HERMES_RUSTWX_BIN_DIR is unset.
 DEFAULT_SEARCH_PATHS = [
     Path.home() / "rustwx" / "target" / "release",
     Path.home() / "rustwx" / "target" / "debug",
@@ -63,19 +53,27 @@ DEFAULT_SEARCH_PATHS = [
     Path("/opt/rustwx/bin"),
 ]
 
+
 @dataclass
 class RustwxEnv:
-    """Resolved binary paths + runtime env for invoking rustwx tools."""
-    bin_dir: Path | None
+    """Resolved Python module + optional binary paths + cache/output roots.
+
+    `module_available` and `module_version` describe the rustwx PyPI
+    package state — that's the primary path for maps. `binaries` lists
+    any optional proof binaries on disk for the specialty paths.
+    """
+    module_available: bool
+    module_version: str | None
+    capabilities: dict | None
     binaries: dict[str, Path] = field(default_factory=dict)
-    netcdf_dir: Path | None = None
+    bin_dir: Path | None = None
     cache_dir: Path = field(default_factory=lambda: Path.cwd() / "cache" / "rustwx")
     out_root: Path = field(default_factory=lambda: Path.cwd() / "outputs")
 
-    def has(self, name: str) -> bool:
+    def has_binary(self, name: str) -> bool:
         return name in self.binaries
 
-    def require(self, name: str) -> Path:
+    def require_binary(self, name: str) -> Path:
         if name not in self.binaries:
             raise RustwxBinaryMissing(name, self.bin_dir)
         return self.binaries[name]
@@ -91,20 +89,44 @@ class RustwxBinaryMissing(RuntimeError):
         msg = (
             f"rustwx binary '{name}' not found"
             + (f" in {bin_dir}" if bin_dir else "")
-            + ". Set HERMES_RUSTWX_BIN_DIR to your rustwx target/release directory, "
-            f"or build the binary with: cargo build --release --bin {name}"
+            + ". This is an optional binary used by specialty tools (sounding,"
+              " cross sections, ECAPE profile probe, ECAPE grid research)."
+              " Build it with: cargo build --release --bin "
+            + name
+            + ", or set HERMES_RUSTWX_BIN_DIR to your rustwx target/release dir."
         )
         super().__init__(msg)
 
 
-def _find_netcdf_dir() -> Path | None:
-    # Current rustwx uses netcrust for WRF NetCDF4 reads, so the agent does not
-    # need to patch PATH with a native netCDF runtime.
-    return None
+# ── Module discovery ────────────────────────────────────────────────────
+
+
+def _probe_module() -> tuple[bool, str | None, dict | None]:
+    """Try `import rustwx` and pull capabilities. Returns (available, version, caps)."""
+    try:
+        import rustwx  # noqa: F401
+    except Exception:
+        return False, None, None
+    version: str | None = None
+    caps: dict | None = None
+    try:
+        # rustwx exposes version via package metadata; fall back to capabilities
+        try:
+            from importlib.metadata import version as _v
+            version = _v("rustwx")
+        except Exception:
+            version = None
+        caps_json = rustwx.agent_capabilities_json()
+        caps = json.loads(caps_json)
+        if version is None:
+            version = caps.get("version") or caps.get("package")
+    except Exception:
+        pass
+    return True, version, caps
 
 
 def _candidate_dirs() -> list[Path]:
-    """Search order: env var → common locations → PATH."""
+    """Search order for optional binaries: env var → common locations."""
     out: list[Path] = []
     env_dir = os.environ.get("HERMES_RUSTWX_BIN_DIR")
     if env_dir:
@@ -114,7 +136,13 @@ def _candidate_dirs() -> list[Path]:
 
 
 def discover() -> RustwxEnv:
-    """Locate rustwx binaries. Always succeeds; check `.binaries`."""
+    """Locate rustwx Python module + any optional binaries.
+
+    Always succeeds — check `.module_available` to decide whether agent-v1
+    paths are usable, and `.has_binary(name)` for specialty paths.
+    """
+    module_available, module_version, capabilities = _probe_module()
+
     binaries: dict[str, Path] = {}
     bin_dir: Path | None = None
 
@@ -122,7 +150,7 @@ def discover() -> RustwxEnv:
         if not d.exists():
             continue
         found_any = False
-        for name in KNOWN_BINARIES:
+        for name in OPTIONAL_BINARIES:
             p = d / f"{name}{EXE}"
             if p.exists() and name not in binaries:
                 binaries[name] = p
@@ -130,24 +158,73 @@ def discover() -> RustwxEnv:
         if found_any and bin_dir is None:
             bin_dir = d
 
-    # Fall back to PATH for anything still unresolved
-    for name in KNOWN_BINARIES:
+    for name in OPTIONAL_BINARIES:
         if name in binaries:
             continue
         path_hit = shutil.which(name)
         if path_hit:
             binaries[name] = Path(path_hit)
 
-    cache_root = Path(os.environ.get("HERMES_CACHE_DIR", Path.cwd() / "cache" / "rustwx"))
-    out_root = Path(os.environ.get("HERMES_OUT_DIR", Path.cwd() / "outputs"))
+    cache_root = Path(os.environ.get(
+        "HERMES_CACHE_DIR", Path.cwd() / "cache" / "rustwx"
+    ))
+    out_root = Path(os.environ.get(
+        "HERMES_OUT_DIR", Path.cwd() / "outputs"
+    ))
 
     return RustwxEnv(
-        bin_dir=bin_dir,
+        module_available=module_available,
+        module_version=module_version,
+        capabilities=capabilities,
         binaries=binaries,
-        netcdf_dir=_find_netcdf_dir(),
+        bin_dir=bin_dir,
         cache_dir=cache_root,
         out_root=out_root,
     )
+
+
+# ── Agent-v1 wrappers ──────────────────────────────────────────────────
+
+
+def render_maps(env: RustwxEnv, request: dict) -> dict:
+    """Call rustwx.render_maps_json with a Python dict request.
+
+    Returns the parsed JSON response. Raises RuntimeError if the rustwx
+    module isn't installed or the call fails.
+    """
+    if not env.module_available:
+        raise RuntimeError(
+            "rustwx Python module not installed. Install with: "
+            "pip install 'rustwx>=0.4'"
+        )
+    import rustwx
+    payload = json.dumps(request, default=str)
+    result_json = rustwx.render_maps_json(payload)
+    return json.loads(result_json)
+
+
+def list_domains(env: RustwxEnv, *, kind: str | None = None,
+                 limit: int | None = None) -> dict:
+    """Call rustwx.list_domains_json with optional filters."""
+    if not env.module_available:
+        return {"count": 0, "domains": [], "error": "rustwx module not installed"}
+    import rustwx
+    return json.loads(rustwx.list_domains_json(kind=kind, limit=limit))
+
+
+def render_sounding_column(env: RustwxEnv, column: dict, output_path: str | Path) -> dict:
+    """Call rustwx.render_sounding_column_json. `column` is a pre-extracted
+    profile column dict; `output_path` is where the PNG lands.
+    """
+    if not env.module_available:
+        raise RuntimeError("rustwx Python module not installed")
+    import rustwx
+    payload = json.dumps(column, default=str)
+    result = rustwx.render_sounding_column_json(payload, str(output_path))
+    return json.loads(result) if result else {"output_path": str(output_path)}
+
+
+# ── Optional binary subprocess (specialty paths) ───────────────────────
 
 
 @dataclass
@@ -175,7 +252,6 @@ class RunResult:
             "out_dir": str(self.out_dir) if self.out_dir else None,
             "pngs": [str(p) for p in self.pngs],
             "manifests": [str(p) for p in self.manifests],
-            # Tail of stderr is more useful than full output for diagnosis
             "stderr_tail": self.stderr.splitlines()[-12:] if self.stderr else [],
         }
 
@@ -189,12 +265,10 @@ def run(
     timeout: int = 600,
     cwd: Path | None = None,
 ) -> RunResult:
-    """Invoke a rustwx binary, returning result + harvested artifacts.
-
-    `out_dir`, when provided, is appended as `--out-dir <out_dir>` and used
-    for PNG/manifest discovery on completion.
+    """Subprocess an optional rustwx binary. Used only for specialty paths
+    not yet covered by the agent-v1 contract.
     """
-    exe = env.require(binary)
+    exe = env.require_binary(binary)
     cmd: list[str] = [str(exe), *args]
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -218,58 +292,17 @@ def run(
         manifests = sorted(out_dir.rglob("*manifest*.json"))
 
     return RunResult(
-        binary=binary,
-        args=cmd,
-        returncode=proc.returncode,
-        seconds=elapsed,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-        out_dir=out_dir,
-        pngs=pngs,
-        manifests=manifests,
+        binary=binary, args=cmd, returncode=proc.returncode, seconds=elapsed,
+        stdout=proc.stdout, stderr=proc.stderr,
+        out_dir=out_dir, pngs=pngs, manifests=manifests,
     )
 
 
-def run_json(
-    env: RustwxEnv,
-    binary: str,
-    args: list[str],
-    *,
-    timeout: int = 60,
-) -> dict | list:
-    """Invoke a binary that emits JSON to stdout (rustwx-cli list/show/etc).
-
-    Raises RuntimeError if the binary returns non-zero or stdout is not JSON.
-    """
-    exe = env.require(binary)
-    proc = subprocess.run(
-        [str(exe), *args],
-        env=env.subprocess_env(),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"{binary} {args} failed (rc={proc.returncode}): {proc.stderr.strip()[:400]}"
-        )
-    out = proc.stdout.strip()
-    if not out:
-        return {}
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"{binary} stdout was not JSON: {exc}\n--- stdout ---\n{out[:400]}") from exc
+# ── Run-string helpers ─────────────────────────────────────────────────
 
 
 def parse_run(run_str: str) -> tuple[str, int]:
-    """Convert the agent-facing run string to (date_yyyymmdd, cycle_int).
-
-    Accepts:
-      "YYYY-MM-DD/HHz"   e.g. "2026-04-25/12z"
-      "YYYYMMDD/HH"      e.g. "20260425/12"
-      "YYYYMMDDHH"       e.g. "2026042512"
-    """
+    """Convert 'YYYY-MM-DD/HHz' / 'YYYYMMDD/HH' / 'YYYYMMDDHH' to (date, cycle)."""
     s = run_str.strip().lower().rstrip("z")
     if "/" in s:
         date_part, cycle_part = s.split("/", 1)
@@ -290,20 +323,17 @@ def parse_run(run_str: str) -> tuple[str, int]:
 
 
 def resolve_latest_run(model: str = "hrrr") -> tuple[str, int]:
-    """Resolve 'latest' by probing NOMADS directory listings.
+    """Resolve 'latest' by probing NOMADS HRRR directory.
 
-    Works without rustwx-cli; uses the same logic as the prior agent.
+    rustwx provides latest_run_json() too — when stable for all models
+    we'll route through that instead.
     """
     import re
     from datetime import datetime, timedelta, timezone
-
     import requests
 
-    bases = {
-        "hrrr": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod",
-    }
+    bases = {"hrrr": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod"}
     if model not in bases:
-        # For now we only auto-resolve HRRR — other models can fall back to wallclock
         now = datetime.now(timezone.utc) - timedelta(hours=4)
         return now.strftime("%Y%m%d"), now.hour
 
@@ -312,7 +342,7 @@ def resolve_latest_run(model: str = "hrrr") -> tuple[str, int]:
     pattern = re.compile(r"hrrr\.t(\d{2})z\.wrf(?:sfc|prs|nat)f\d{2}\.grib2")
 
     for day_offset in range(2):
-        date = now - __import__("datetime").timedelta(days=day_offset)
+        date = now - timedelta(days=day_offset)
         date_str = date.strftime("%Y%m%d")
         try:
             r = requests.get(f"{base}/hrrr.{date_str}/conus/", timeout=15)
@@ -324,5 +354,5 @@ def resolve_latest_run(model: str = "hrrr") -> tuple[str, int]:
         if hours:
             return date_str, int(hours[-1])
 
-    fb = now - __import__("datetime").timedelta(hours=3)
+    fb = now - timedelta(hours=3)
     return fb.strftime("%Y%m%d"), fb.hour

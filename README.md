@@ -47,43 +47,39 @@ This is strong for exploratory and product-triage research, not yet calibrated f
 
 ## Install
 
-`rustwx` will be on PyPI shortly. Until then, two steps:
+```bash
+pip install rustwx hermes-weather-agent
+weather-mcp --doctor
+```
+
+That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.0` is required because that release routes heavy ECAPE products through the same API.
+
+`weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and `domain_count: 77`.
+
+### Optional specialty tools
+
+A small set of tools sit *outside* the agent-v1 contract today and need rustwx workspace binaries to be built locally:
+
+- `wx_sounding` (skew-T renderer)
+- `wx_cross_section`
+- `wx_ecape_profile` (single-point ECAPE probe)
+- `wx_ecape_grid` (full-grid ECAPE swath research)
+
+If you want those too:
 
 ```bash
-# 1. Plugin (pure Python, light dependencies)
-pip install git+https://github.com/FahrenheitResearch/hermes-weather-agent.git
-
-# 2. rustwx binaries (Rust toolchain handles everything else)
 git clone https://github.com/FahrenheitResearch/rustwx
 cd rustwx
 cargo build --release \
-  --bin rustwx-cli \
-  --bin product_catalog \
-  --bin direct_batch \
-  --bin derived_batch \
-  --bin hrrr_direct_batch \
-  --bin hrrr_derived_batch \
-  --bin hrrr_windowed_batch \
-  --bin heavy_panel_hour \
-  --bin hrrr_ecape_ratio_display \
-  --bin hrrr_ecape_grid_research \
-  --bin hrrr_ecape_profile_probe \
+  --bin sounding_plot \
   --bin cross_section_proof \
-  --bin forecast_now \
-  --bin hrrr_dataset_export
+  --bin hrrr_ecape_profile_probe \
+  --bin hrrr_ecape_grid_research
 
 export HERMES_RUSTWX_BIN_DIR="$(pwd)/target/release"
 ```
 
-Then verify everything is reachable:
-
-```bash
-weather-mcp --doctor
-```
-
-You should see every binary discovered, `product_catalog_loaded: true`, and `missing_critical: []`. If anything is missing, set `HERMES_RUSTWX_BIN_DIR` to your rustwx `target/release/` directory.
-
-> **Windows note:** if you've previously installed the standalone `netCDF for Windows` package, the plugin works without it — current rustwx builds use `netcrust` (pure-Rust) for any NetCDF needed. No `netcdf.dll` PATH manipulation required.
+These will fold into the agent-v1 contract in a future rustwx release; until then, the corresponding MCP tools degrade with a clear "build the binary" error rather than blocking the rest of the plugin.
 
 ## Configure
 
@@ -154,7 +150,7 @@ weather-mcp --test      # smoke-test render
 |---|---|
 | `wx_cross_section` | Vertical cross section through model fields (route presets or city pairs) |
 | `wx_radar` | Fetch nearest NEXRAD Level 2 scan |
-| `wx_sounding` | Skew-T at (lat, lon) — temporary matplotlib renderer until rustwx-sounding ships a CLI |
+| `wx_sounding` | Skew-T at (lat, lon) rendered by rustwx's native `sounding_plot` binary; supports `sample_method="box-mean"` with `box_radius_km` |
 
 ### Research mode
 | Tool | Purpose |

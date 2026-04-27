@@ -33,9 +33,7 @@ from .tools import (
     radar as radar_tool,
     render as render_tool,
     research as research_tool,
-    severe as severe_tool,
     sounding as sounding_tool,
-    windowed as windowed_tool,
 )
 
 ENV = discover()
@@ -381,9 +379,8 @@ def _tool_definitions() -> list[Tool]:
         Tool(
             name="wx_sounding",
             description=(
-                "Render a basic skew-T sounding at (lat, lon) using the HRRR column from "
-                "hrrr_ecape_profile_probe. Stop-gap matplotlib renderer until rustwx-sounding "
-                "ships a CLI-driven path."
+                "Render a SHARPpy-style skew-T sounding at (lat, lon) with the native "
+                "rustwx sounding_plot binary."
             ),
             inputSchema={
                 "type": "object",
@@ -392,6 +389,24 @@ def _tool_definitions() -> list[Tool]:
                     "run": run_schema,
                     "forecast_hour": {"type": "integer", "default": 1},
                     "model": {"type": "string", "default": "hrrr"},
+                    "source": {"type": "string", "default": "aws"},
+                    "sample_method": {
+                        "type": "string",
+                        "enum": ["nearest", "inverse-distance4", "box-mean"],
+                        "default": "nearest",
+                    },
+                    "box_radius_km": {
+                        "type": "number",
+                        "description": "Half-width for sample_method='box-mean'; defaults to 25 km.",
+                    },
+                    "box_radius_deg": {
+                        "type": "number",
+                        "description": "Optional lat/lon degree half-width for sample_method='box-mean'.",
+                    },
+                    "crop_radius_deg": {
+                        "type": "number",
+                        "description": "Model crop radius around the target point. Automatically expands for box soundings.",
+                    },
                 },
                 "required": ["location"],
             },
@@ -556,9 +571,9 @@ def _dispatch(name: str, args: dict) -> dict | list:
     if name == "wx_render_recipe":
         return render_tool.render_recipe(ENV, **_with_run(args, key="run_str"))
     if name == "wx_windowed":
-        return windowed_tool.windowed(ENV, **_with_run(args, key="run_str"))
+        return render_tool.windowed(ENV, **_with_run(args, key="run_str"))
     if name == "wx_severe_panel":
-        return severe_tool.severe_panel(ENV, **_with_run(args, key="run_str"))
+        return render_tool.severe_panel(ENV, **_with_run(args, key="run_str"))
     if name == "wx_cape":
         return render_tool.cape(ENV, **_with_run(args, key="run_str"))
     if name == "wx_ecape":

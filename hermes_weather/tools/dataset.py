@@ -134,7 +134,7 @@ def build_dataset(
         spec_out.mkdir(parents=True, exist_ok=True)
         output_json = spec_out / "profile.json"
         binary = "hrrr_ecape_profile_probe"
-        if not env.has(binary):
+        if not env.has_binary(binary):
             return {"ok": False, "error": f"{binary} not built"}
         args = [
             "--model", model,

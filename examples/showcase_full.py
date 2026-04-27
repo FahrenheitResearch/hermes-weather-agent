@@ -294,7 +294,7 @@ def run_observations(env):
          radar_tool.radar, env,
          site="KTLX", _note="Renders to PNG only if ptx-radar-processor is installed.")
 
-    call("sounding", "Skew-T @ Norman, OK (matplotlib stop-gap)",
+    call("sounding", "Skew-T @ Norman, OK (native rustwx)",
          sounding_tool.sounding, env,
          location=LOCATION_DEMO, run_str=HRRR_RUN, forecast_hour=1, timeout=180)
 

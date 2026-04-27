@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .. import jobs
-from ..geo import Bbox, bbox_from_center, lookup_city, resolve_location, resolve_region
+from ..geo import Bbox, bbox_from_center, resolve_location
 from ..rustwx import RustwxEnv, parse_run, resolve_latest_run, run
 
 # Curated stress fixtures — high-terrain, dry-slot, cold-pool, etc. Tracks
@@ -81,7 +81,7 @@ def _run_one_probe(
     source: str, out_dir: Path, timeout: int,
 ) -> dict:
     binary = "hrrr_ecape_profile_probe"
-    if not env.has(binary):
+    if not env.has_binary(binary):
         return {"ok": False, "label": label, "error": f"{binary} not built"}
 
     leaf = out_dir / f"{date}_{cycle:02d}z_f{forecast_hour:03d}" / f"{label}_{lat:.3f}_{lon:.3f}"
@@ -173,14 +173,6 @@ def _resolve_targets(
             if ll is None:
                 return []
             bb = bbox_from_center(*ll, radius_km=radius_km)
-        elif region:
-            # Approximate bbox for a region preset by inflating its center
-            from .catalog import REGIONS  # noqa
-            from ..geo import REGION_CENTERS
-            center = REGION_CENTERS.get(region)
-            if center is None:
-                return []
-            bb = bbox_from_center(*center, radius_km=600.0)
         else:
             # Default to CONUS
             bb = Bbox(west=-125.0, east=-67.0, south=24.0, north=49.0)
