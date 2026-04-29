@@ -6,7 +6,7 @@ schema. This module exposes thin filtered views suitable for an agent
 to consume without re-reading the full capabilities JSON.
 
 If `import rustwx` isn't installed, all functions degrade with a clear
-"install rustwx>=0.4" error rather than crashing the MCP server.
+"install rustwx>=0.4.6" error rather than crashing the MCP server.
 """
 from __future__ import annotations
 
@@ -171,7 +171,7 @@ def doctor(env: RustwxEnv) -> dict:
         info["domain_count"] = caps.get("domains", {}).get("count")
     else:
         info["error"] = (
-            "rustwx Python module not found. Run: pip install 'rustwx>=0.4'"
+            "rustwx Python module not found. Run: pip install 'rustwx>=0.4.6'"
         )
 
     info["optional_binaries"] = {
@@ -195,7 +195,7 @@ def doctor(env: RustwxEnv) -> dict:
         info["advice"] = (
             "Map rendering (direct/derived/heavy ECAPE/windowed) is fully "
             "available via the rustwx agent-v1 API. Satellite and point "
-            "meteogram calls require rustwx>=0.4.4. Specialty tools "
+            "meteogram calls require rustwx>=0.4.6. Specialty tools "
             "(sounding, VolumeStore cross sections, radar export, "
             "ECAPE profile probe, ECAPE grid research) require the "
             "corresponding optional binaries built from the rustwx workspace; "
@@ -203,7 +203,7 @@ def doctor(env: RustwxEnv) -> dict:
             "and set HERMES_RUSTWX_BIN_DIR."
         )
     else:
-        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.4.4'"
+        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.4.6'"
     return info
 
 
@@ -211,5 +211,5 @@ def _module_error() -> dict:
     return {
         "ok": False,
         "error": "rustwx Python module not installed",
-        "fix": "pip install 'rustwx>=0.4.4'",
+        "fix": "pip install 'rustwx>=0.4.6'",
     }

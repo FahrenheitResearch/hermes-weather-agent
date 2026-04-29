@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-weather-agent"
-version = "0.5.0"
-description = "MCP plugin: AI agents drive rustwx for HRRR/GFS rendering, ECAPE diagnostics, cross sections, and dataset assembly."
+version = "0.5.1"
+description = "Standalone Weather MCP server powered by rustwx for model maps, satellite, radar, meteograms, cross sections, and research workflows."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Atmospheric Science",
 ]
 dependencies = [
-    "rustwx>=0.4.4",
+    "rustwx>=0.4.6",
     "mcp>=1.0.0",
     "requests>=2.28",
     "numpy>=1.24",

@@ -84,7 +84,7 @@ def main() -> int:
             print("  (timeout waiting on ratio map)")
 
     section("Cross section: Amarillo → Chicago, theta-e")
-    section("rustwx 0.4.4: HRRR VolumeStore cross section")
+    section("rustwx 0.4.6: HRRR VolumeStore cross section")
     report(
         "wx_volume_cross_section: SoCal coast to desert, HRRR f0, small product set",
         volume_cs_tool.volume_cross_section,
@@ -98,7 +98,7 @@ def main() -> int:
         timeout=900,
     )
 
-    section("rustwx 0.4.4: GOES18 CA satellite")
+    section("rustwx 0.4.6: GOES18 satellite")
     report(
         "wx_satellite: GOES18 Pacific Southwest full product set",
         satellite_tool.satellite,
@@ -113,7 +113,7 @@ def main() -> int:
         download_glm=True,
     )
 
-    section("rustwx 0.4.4: SoCal HRRR meteogram")
+    section("rustwx 0.4.6: SoCal HRRR meteogram")
     report(
         "wx_meteogram: Los Angeles, HRRR f0-f3",
         meteogram_tool.meteogram,

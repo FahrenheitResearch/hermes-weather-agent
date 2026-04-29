@@ -251,7 +251,7 @@ def ratio_map(
     if not env.module_available:
         return {
             "ok": False,
-            "error": "rustwx Python module not installed; run: pip install 'rustwx>=0.4'",
+            "error": "rustwx Python module not installed; run: pip install 'rustwx>=0.4.6'",
         }
     parcel = parcel.lower()
     if parcel not in ("sb", "ml", "mu"):

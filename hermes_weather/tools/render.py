@@ -97,7 +97,7 @@ def render_recipe(
         return {
             "ok": False,
             "error": (
-                "rustwx Python module not installed. Run: pip install 'rustwx>=0.4'"
+                "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.6'"
             ),
         }
     if not recipes:

@@ -54,13 +54,13 @@ def _collect_pngs(value: Any) -> list[str]:
 def _render_goes_satellite(env: RustwxEnv, request: dict) -> dict:
     if not env.module_available:
         raise RuntimeError(
-            "rustwx Python module not installed. Install with: pip install 'rustwx>=0.4.4'"
+            "rustwx Python module not installed. Install with: pip install 'rustwx>=0.4.6'"
         )
     import rustwx
 
     if not hasattr(rustwx, "render_goes_satellite_json"):
         raise RuntimeError(
-            "installed rustwx does not expose render_goes_satellite_json; install rustwx>=0.4.4"
+            "installed rustwx does not expose render_goes_satellite_json; install rustwx>=0.4.6"
         )
     return json.loads(rustwx.render_goes_satellite_json(json.dumps(request, default=str)))
 
@@ -92,7 +92,7 @@ def satellite(
     if not env.module_available:
         return {
             "ok": False,
-            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.4'",
+            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.6'",
         }
 
     domain_slug = domain.strip().lower().replace(" ", "-")

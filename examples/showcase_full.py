@@ -291,7 +291,7 @@ def run_multi_model(env):
     # local agent-v1 path, so keep the runnable showcase to passing outputs.
 
 def run_rustwx_044_integrations(env):
-    print("\n-- rustwx 0.4.4 Integrations --------------------------------")
+    print("\n-- rustwx 0.4.6 Integrations --------------------------------")
     call("volume_cross_section", "wx_volume_cross_section: SoCal all non-smoke products, f0",
          volume_cs_tool.volume_cross_section, env,
          products=["all"], route="socal-coast-desert",
@@ -476,7 +476,7 @@ def main() -> int:
     print("=" * 60)
 
     if not env.module_available:
-        print("FATAL: rustwx Python module not discovered. Install rustwx>=0.4.4.")
+        print("FATAL: rustwx Python module not discovered. Install rustwx>=0.4.6.")
         return 1
 
     started = time.time()

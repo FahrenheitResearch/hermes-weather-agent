@@ -2,7 +2,7 @@
 
 The plugin's primary path is the rustwx Python API (agent-v1 contract):
 
-    pip install rustwx>=0.4.4
+    pip install rustwx>=0.4.6
     import rustwx
     rustwx.agent_capabilities_json()
     rustwx.list_domains_json()
@@ -198,7 +198,7 @@ def render_maps(env: RustwxEnv, request: dict) -> dict:
     if not env.module_available:
         raise RuntimeError(
             "rustwx Python module not installed. Install with: "
-            "pip install 'rustwx>=0.4'"
+            "pip install 'rustwx>=0.4.6'"
         )
     import rustwx
     payload = json.dumps(request, default=str)

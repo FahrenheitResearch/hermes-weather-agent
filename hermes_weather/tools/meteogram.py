@@ -1,4 +1,4 @@
-"""Point time-series / meteogram sampling via rustwx 0.4.4 Python APIs."""
+"""Point time-series / meteogram sampling via rustwx 0.4.6 Python APIs."""
 from __future__ import annotations
 
 import json
@@ -57,13 +57,13 @@ def _forecast_hour_list(
 def _rustwx_json_call(env: RustwxEnv, function_name: str, request: dict) -> dict:
     if not env.module_available:
         raise RuntimeError(
-            "rustwx Python module not installed. Install with: pip install 'rustwx>=0.4.4'"
+            "rustwx Python module not installed. Install with: pip install 'rustwx>=0.4.6'"
         )
     import rustwx
 
     if not hasattr(rustwx, function_name):
         raise RuntimeError(
-            f"installed rustwx does not expose {function_name}; install rustwx>=0.4.4"
+            f"installed rustwx does not expose {function_name}; install rustwx>=0.4.6"
         )
     function = getattr(rustwx, function_name)
     return json.loads(function(json.dumps(request, default=str)))
@@ -95,7 +95,7 @@ def meteogram(
     if not env.module_available:
         return {
             "ok": False,
-            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.4'",
+            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.6'",
         }
 
     point = _resolve_point(location, lat, lon)
@@ -183,7 +183,7 @@ def warm_store(
     if not env.module_available:
         return {
             "ok": False,
-            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.4'",
+            "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.6'",
         }
 
     try:
