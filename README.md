@@ -1,58 +1,55 @@
 # Hermes Weather Agent
 
-**An MCP plugin that turns an AI agent into a meteorology research instrument.**
+**A standalone Weather MCP server powered by rustwx.**
 
-Hermes Weather Agent drives [`rustwx`](https://github.com/FahrenheitResearch/rustwx) — a pure-Rust weather workspace — end-to-end from a Hermes Agent / Claude / any MCP-speaking client. Two equally first-class paths:
+Hermes Weather Agent gives Hermes Agent, Claude, and any MCP-speaking client direct access to [`rustwx`](https://github.com/FahrenheitResearch/rustwx), a pure-Rust weather workspace. It is meant to be a general weather engine for agents: model maps, satellite imagery, radar products, meteograms, soundings, cross sections, latest-run discovery, local cache management, and severe-weather research tools from one server.
 
-1. **Consumer / Pivotal-Weather replacement.** Prompt for any HRRR / GFS / RRFS-A / ECMWF product over any city, region, or CONUS — get a publication-quality PNG. No more clicking through someone else's dashboard.
-2. **Meteorology research agent.** Full-parcel ECAPE maps, profile sweeps, plume-object analysis, ratio products with magnitude masks. Five first-class research tracks (below) backed by per-grid-hour processed outputs.
-
-The compute and rendering live in `rustwx`. PNG output goes through the pure-Rust `rustwx-render` contour engine — no matplotlib for maps, no ANSI rendering, no Python in the hot path. WRF NetCDF4 reads use `netcrust` (pure-Rust, feature-gated) so **no `netcdf.dll` runtime is required for the standard agent workflows.**
+The compute and rendering live in `rustwx`. PNG output goes through the pure-Rust `rustwx-render` contour engine: no matplotlib for maps, no ANSI rendering, and no Python in the hot path. WRF NetCDF4 reads use `netcrust` (pure-Rust, feature-gated) so **no `netcdf.dll` runtime is required for the standard agent workflows.**
 
 ## Why this matters
 
-* **Full-parcel ECAPE maps at HRRR-grid scale.** As far as we can tell, this is the first publicly available tool that produces ECAPE *maps* — not just sounding-scale ECAPE — using full parcel-path entraining-CAPE calculations. Validated to within **0.04 J/kg of `ecape-parcel`** across all 12 SB/ML/MU × entraining/non-entraining × pseudo/irreversible combinations on real HRRR profiles.
-* **Sub-millisecond per profile** in Rust (`0.45–0.65 ms`). 5,600–13,000× faster than the Python `ecape-parcel` reference (2.8–6.1 s/config). Source: ECAPE-RS validation paper, April 2026.
-* **Full-CONUS HRRR ECAPE in ~17 s** per forecast hour (272,955 cells, ~15,400 cells/s). Previously impractical at this scale.
-* **Catalog discovery.** 100+ products with status/maturity/runner/per-model support metadata, queried live from `rustwx product_catalog`. The agent picks recipes the model actually supports instead of guessing.
+* **One MCP server for weather work.** Agents can request maps, satellite, radar, meteograms, soundings, cross sections, cache status, and background jobs without a custom web app.
+* **Latest data by default.** HRRR requests resolve against advertised forecast-hour availability; longer-range HRRR requests use the newest synoptic cycle with the requested hours.
+* **Efficient local data use.** rustwx uses `.idx` byte-range fetches where possible, and Hermes exposes data-pack guidance so users can choose how much disk to reserve.
+* **Live product discovery.** 100+ products with status/maturity/runner/per-model support metadata are queried from `rustwx product_catalog`; the agent can pick products the model actually supports.
+* **Advanced severe-weather research when needed.** ECAPE maps, profile probes, profile sweeps, ratio maps, and severe panels are available as regular tools, not as a separate research-only app.
 
 ## What an agent can do with this
 
 ```
-"Render MLECAPE and 0–3 km SRH over the southern plains for the latest HRRR."
-"Pull the ECAPE/CAPE ratio map for the gulf-to-kansas region right now."
-"Probe the ECAPE profile at Norman, OK at the latest f01."
-"Cross-section theta-e from Amarillo to Chicago at f06."
+"Render latest HRRR 2 m temperature and 10 m wind over Los Angeles."
+"Show me the latest GOES-West GeoColor image with GLM overlay for southern California."
+"Make a point meteogram for Redding for the next 18 hours."
+"Render KTLX base reflectivity and dual-pol products."
+"Cross-section theta-e from Amarillo to Chicago at f06 using the HRRR VolumeStore."
 "What does the latest CONUS QPF look like at f24?"
 
-# Research:
-"Run a 50-profile random sweep across the southern plains over the last 3 days."
-"Run the curated stress profile suite at the latest cycle and give me the
-   worst-case parcel timings."
+"Render MLECAPE and 0-3 km SRH over the southern plains for the latest HRRR."
+"Probe the ECAPE profile at Norman, OK at the latest f01."
 "Build a 7-day dataset of MLECAPE / SRH 0-3 / STP renders for southern-plains."
 "What's currently in the cache, and what would a 400 GB eviction free?"
 ```
 
-## Five first-class research tracks
+## Advanced Research Mode
 
-The processed per-grid-hour outputs include object/component and report-overlap tables for every standard mask (`ml_cape_ge_500/1000/1500/2000`, `ml_ecape_ge_500/1000/1500/2000`, `ml_ecape_ehi03_ge_0p5/1/2/3`, `ratio_high_*`, `ratio_low_*`, plus high-end and warm-sector combos). That makes the following directly answerable:
+The general weather tools are the main surface area. On top of that, Hermes Weather Agent includes ECAPE and severe-weather research tools for deeper work:
 
-1. **ECAPE vs CAPE plume efficiency.** Compare report capture vs area burden between MLCAPE-based and MLECAPE-based plumes. Are entrainment-aware diagnostics actually finding the storm-scale signal more efficiently?
-2. **ECAPE-EHI threshold behavior.** Thresholds 0.5 / 1 / 2 / 3 are emitted by default. How does report capture rate scale with threshold for ECAPE-EHI vs analytic-EHI?
-3. **Hard-null / random baseline burden.** Random-cycle f003 batches give the false-area background — quantify how much area each threshold flags in null cases.
-4. **Connected plume-object research.** Component tables ship with object area, centroid, bounds, and largest-component rank. Persistence, displacement, and report-overlap by object follow.
-5. **Ratio-map caution.** ECAPE/CAPE ratio masks are generated *with* magnitude constraints baked in — the paper's caveat (ratios are misleading without a CAPE/ECAPE magnitude mask) is enforced by default.
+* full-parcel ECAPE maps at HRRR-grid scale
+* per-profile ECAPE diagnostics from the Rust solver
+* random/target/stress profile sweeps
+* severe-weather panels and ECAPE/CAPE ratio products
+* multi-day render/probe datasets for verification workflows
 
-This is strong for exploratory and product-triage research, not yet calibrated forecast skill. Calibration is downstream of the verification work these tools enable.
+The ECAPE path is strong for exploratory and product-triage research, not yet calibrated forecast skill. Calibration is downstream of the verification work these tools enable.
 
 ## Install
 
 ```bash
-pip install rustwx hermes-weather-agent
+pip install -U rustwx hermes-weather-agent
 weather-mcp --doctor
 ```
 
-That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.4` is required for the map, satellite, and point-timeseries Python APIs used here.
+That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.5` is recommended for the current public release.
 
 `weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and a nonzero `domain_count`.
 
@@ -130,7 +127,7 @@ weather-mcp --test      # smoke-test render
 | `wx_latest` | Resolve the latest available run for a model |
 | `wx_data_packs` | HRRR-first local storage tiers: what works without more downloads at 1/5/10/50 GB style budgets |
 
-Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"` and resolve against advertised forecast-hour availability; requests for f019-f048 use the newest HRRR synoptic cycle that actually has those hours, following the CA Fire runner pattern. Local data-pack tiers are cache/retention guidance: rustwx uses `.idx` byte-range fetches wherever the requested fields can be safely subset, while larger tiers simply retain more warmed hours, routes, and artifacts.
+Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"` and resolve against advertised forecast-hour availability; requests for f019-f048 use the newest HRRR synoptic cycle that actually has those hours. Local data-pack tiers are cache/retention guidance: rustwx uses `.idx` byte-range fetches wherever the requested fields can be safely subset, while larger tiers simply retain more warmed hours, routes, and artifacts.
 
 ### Direct & derived rendering
 | Tool | Purpose |
@@ -156,7 +153,7 @@ Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"`
 |---|---|
 | `wx_cross_section` | Compatibility alias for HRRR pressure VolumeStore cross sections |
 | `wx_volume_cross_section` | HRRR pressure VolumeStore cross sections; builds a short-lived 1-3 hour local store and renders PNG/WebP for all non-smoke wxsection styles |
-| `wx_satellite` | Latest GOES satellite imagery via `rustwx.render_goes_satellite_json`; CA Fire default is GeoColor, GLM overlay, RGB composites, and ABI Bands 1-16 |
+| `wx_satellite` | Latest GOES satellite imagery via `rustwx.render_goes_satellite_json`; supports GeoColor, GLM overlay, RGB composites, and ABI Bands 1-16 |
 | `wx_meteogram` | Point forecast time series via `rustwx.sample_point_timeseries_json`, or a warmed store when `store_id` is supplied |
 | `wx_meteogram_warm_store` | Warm a point-timeseries grid store for repeated meteogram sampling |
 | `wx_radar` | Native rustwx NEXRAD Level-II rendering via `radar_export`: base, dual-pol, SRV, VIL, echo tops, and feature JSON |
@@ -184,7 +181,7 @@ python examples/showcase_full.py        # ~3 min with warm cache, ~5 min cold
 python examples/showcase_html.py        # builds outputs/showcase/index.html
 ```
 
-The showcase includes HRRR VolumeStore cross sections, the CA Fire GOES18 product set, direct point meteograms, warmed point-timeseries store sampling, and native rustwx radar export. Open `outputs/showcase/index.html` after running.
+The showcase includes HRRR VolumeStore cross sections, the GOES18 product set, direct point meteograms, warmed point-timeseries store sampling, and native rustwx radar export. Open `outputs/showcase/index.html` after running.
 
 Top wall-time consumers from the canonical run:
 
@@ -234,7 +231,7 @@ fast_xs = volume_cross_section.volume_cross_section(
     run_str="latest", forecast_hour=0,
 )
 
-# CA Fire satellite set, short point meteogram, and native radar export.
+# GOES satellite set, short point meteogram, and native radar export.
 sat = satellite.satellite(env, products=satellite.DEFAULT_PRODUCTS)
 met = meteogram.meteogram(env, location=(34.0522, -118.2437),
                           forecast_hour_start=0, forecast_hour_end=3)
