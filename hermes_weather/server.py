@@ -26,14 +26,16 @@ from .rustwx import RustwxBinaryMissing, discover
 from .tools import (
     cache as cache_tool,
     catalog,
-    cross_section as cs_tool,
     dataset as ds_tool,
     ecape as ecape_tool,
     fetch as fetch_tool,
+    meteogram as meteogram_tool,
     radar as radar_tool,
     render as render_tool,
     research as research_tool,
+    satellite as satellite_tool,
     sounding as sounding_tool,
+    volume_cross_section as volume_cs_tool,
 )
 
 ENV = discover()
@@ -339,41 +341,214 @@ def _tool_definitions() -> list[Tool]:
         Tool(
             name="wx_cross_section",
             description=(
-                "Vertical cross section through model fields. Choose a route preset "
-                "(amarillo-chicago, kansas-city-chicago, san-francisco-tahoe, sacramento-reno, "
-                "los-angeles-mojave, san-diego-imperial) or pass start/end as cities or 'lat,lon'. "
-                "Products: temperature, relative-humidity, specific-humidity, theta-e, wind-speed, "
-                "wet-bulb, vapor-pressure-deficit, dewpoint-depression, moisture-transport, fire-weather."
+                "Compatibility alias for wx_volume_cross_section. HRRR-only; builds a small "
+                "temporary pressure VolumeStore and renders PNG/WebP cross-section products. "
+                "Future model support should extend the VolumeStore path, not the legacy proof renderer."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "product": {"type": "string", "default": "temperature"},
+                    "products": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Product slugs, or omit/use ['all'] for all non-smoke VolumeStore products.",
+                    },
+                    "product": {"type": "string", "description": "Single-product shortcut."},
                     "route": {"type": "string"},
                     "start": location_schema,
                     "end": location_schema,
-                    "model": {"type": "string", "default": "hrrr"},
                     "run": run_schema,
                     "forecast_hour": fhour_schema,
+                    "forecast_hours": {"type": "array", "items": {"type": "integer"}},
+                    "forecast_hour_start": {"type": "integer"},
+                    "forecast_hour_end": {"type": "integer"},
                     "source": {"type": "string", "default": "nomads"},
-                    "palette": {"type": "string"},
-                    "sample_count": {"type": "integer", "default": 181},
-                    "no_wind_overlay": {"type": "boolean", "default": False},
+                    "spacing_km": {"type": "number", "default": 10.0},
+                    "width": {"type": "integer", "default": 1400},
+                    "height": {"type": "integer", "default": 820},
+                    "max_build_hours": {"type": "integer", "default": 3},
+                    "allow_more_hours": {"type": "boolean", "default": False},
+                    "keep_store": {"type": "boolean", "default": True},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_volume_cross_section",
+            description=(
+                "Fast HRRR-only cross sections through the new rustwx pressure VolumeStore. "
+                "Builds a small temporary local store for the requested route/hour window "
+                "(1-3 hours by default), renders PNG and WebP products, then prunes old stores. "
+                "Products include all wxsection non-smoke styles: temperature, wind_speed, theta_e, "
+                "rh, q, omega, vorticity, shear, lapse_rate, cloud, cloud_total, wetbulb, icing, "
+                "frontogenesis, vpd, dewpoint_dep, moisture_transport, pv, fire_wx."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "products": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Product slugs, or omit/use ['all'] for all non-smoke VolumeStore products.",
+                    },
+                    "product": {"type": "string", "description": "Single-product shortcut."},
+                    "route": {"type": "string", "default": "socal-coast-desert"},
+                    "start": location_schema,
+                    "end": location_schema,
+                    "run": run_schema,
+                    "forecast_hour": fhour_schema,
+                    "forecast_hours": {"type": "array", "items": {"type": "integer"}},
+                    "forecast_hour_start": {"type": "integer"},
+                    "forecast_hour_end": {"type": "integer"},
+                    "source": {"type": "string", "default": "nomads"},
+                    "spacing_km": {"type": "number", "default": 10.0},
+                    "width": {"type": "integer", "default": 1400},
+                    "height": {"type": "integer", "default": 820},
+                    "top_pressure_hpa": {"type": "integer", "default": 100},
+                    "bounds_padding_deg": {"type": "number", "default": 1.5},
+                    "load_parallelism": {"type": "integer", "default": 2},
+                    "max_build_hours": {"type": "integer", "default": 3},
+                    "allow_more_hours": {"type": "boolean", "default": False},
+                    "store_ttl_hours": {"type": "number", "default": 6.0},
+                    "keep_store": {"type": "boolean", "default": True},
+                    "out_dir": {"type": "string"},
+                    "timeout": {"type": "integer", "default": 900},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_satellite",
+            description=(
+                "Render latest GOES satellite imagery via rustwx.render_goes_satellite_json. "
+                "Default products match the CA Fire satellite lane: GeoColor, GLM overlay, "
+                "RGB composites, and ABI Bands 1-16."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "satellite": {"type": "string", "default": "goes18"},
+                    "abi_product": {"type": "string", "default": "ABI-L2-CMIPC"},
+                    "domain": {"type": "string", "default": "pacific_southwest"},
+                    "bounds": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "[west, east, south, north]; overrides domain",
+                    },
+                    "label": {"type": "string"},
+                    "products": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": satellite_tool.DEFAULT_PRODUCTS,
+                    },
+                    "width": {"type": "integer"},
+                    "height": {"type": "integer"},
+                    "scan_lookback_hours": {"type": "integer", "default": 6},
+                    "discovery_retries": {"type": "integer"},
+                    "retry_sleep_ms": {"type": "integer"},
+                    "use_cache": {"type": "boolean", "default": True},
+                    "download_glm": {"type": "boolean", "default": False},
+                    "glm_fetch_count": {"type": "integer"},
+                    "glm_lookback_hours": {"type": "integer"},
+                    "glm_max_age_min": {"type": "number"},
+                    "high_speed_png": {"type": "boolean", "default": True},
+                    "skip_scan_id": {"type": "string"},
+                    "out_dir": {"type": "string"},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_meteogram",
+            description=(
+                "Sample a point forecast time series via rustwx.sample_point_timeseries_json. "
+                "Pass store_id to sample a warmed point-timeseries store instead."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "location": location_schema,
+                    "lat": {"type": "number"},
+                    "lon": {"type": "number"},
+                    "store_id": {"type": "string"},
+                    "model": {"type": "string", "default": "hrrr"},
+                    "run": run_schema,
+                    "source": {"type": "string", "default": "nomads"},
+                    "forecast_hour_start": {"type": "integer", "default": 0},
+                    "forecast_hour_end": {"type": "integer", "default": 3},
+                    "forecast_hours": {"type": "array", "items": {"type": "integer"}},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                    "method": {
+                        "type": "string",
+                        "enum": ["nearest", "nearest-cell", "inverse-distance-4", "idw4"],
+                        "default": "nearest",
+                    },
+                    "use_cache": {"type": "boolean", "default": True},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_meteogram_warm_store",
+            description=(
+                "Warm an in-memory rustwx point-timeseries grid store for repeated meteogram sampling. "
+                "Use the returned store_id with wx_meteogram."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "default": "hrrr"},
+                    "run": run_schema,
+                    "source": {"type": "string", "default": "nomads"},
+                    "bounds": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "[west, east, south, north]; defaults to Southern California",
+                    },
+                    "forecast_hour_start": {"type": "integer", "default": 0},
+                    "forecast_hour_end": {"type": "integer", "default": 3},
+                    "forecast_hours": {"type": "array", "items": {"type": "integer"}},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                    "use_cache": {"type": "boolean", "default": True},
                 },
                 "required": [],
             },
         ),
         Tool(
             name="wx_radar",
-            description="Fetch the NEXRAD Level 2 scan nearest to a target time for a site (e.g. KTLX). Renders to PNG if ptx-radar-processor is installed; otherwise returns the raw scan path.",
+            description=(
+                "Render NEXRAD Level-II radar PNGs and feature JSON with rustwx radar_export. "
+                "Supports base, dual-pol, storm-relative velocity, VIL, echo tops, and all-product exports."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "site": {"type": "string", "description": "4-letter ICAO site ID, e.g. KTLX, KBMX"},
+                    "lat": {"type": "number", "description": "Latitude; used with lon to choose nearest radar site"},
+                    "lon": {"type": "number", "description": "Longitude; used with lat to choose nearest radar site"},
+                    "location": location_schema,
                     "valid_time": {"type": "string", "description": "ISO 8601 UTC; default = now"},
-                    "product": {"type": "string", "default": "DBZ"},
+                    "product": {
+                        "type": "string",
+                        "default": "ref",
+                        "description": "ref, vel, sw, zdr, cc, phi, kdp, hca, srv, vil, et, or all",
+                    },
+                    "products": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                        "description": "Comma list or array. Use 'all' for every renderable product in the scan.",
+                    },
+                    "size": {"type": "integer", "default": 1024},
+                    "min_value": {"type": "number"},
+                    "include_tensor": {"type": "boolean", "default": False},
+                    "max_tensor_gates": {"type": "integer", "default": 800},
+                    "cache_dir": {"type": "string"},
+                    "out_dir": {"type": "string"},
+                    "timeout": {"type": "integer", "default": 180},
                 },
-                "required": ["site"],
+                "required": [],
             },
         ),
         Tool(
@@ -593,7 +768,16 @@ def _dispatch(name: str, args: dict) -> dict | list:
         return ecape_tool.ratio_map(ENV, **_with_run(args, key="run_str"))
 
     if name == "wx_cross_section":
-        return cs_tool.cross_section(ENV, **_with_run(args, key="run_str"))
+        return volume_cs_tool.volume_cross_section(ENV, **_with_run(args, key="run_str"))
+    if name == "wx_volume_cross_section":
+        return volume_cs_tool.volume_cross_section(ENV, **_with_run(args, key="run_str"))
+
+    if name == "wx_satellite":
+        return satellite_tool.satellite(ENV, **args)
+    if name == "wx_meteogram":
+        return meteogram_tool.meteogram(ENV, **_with_run(args, key="run_str"))
+    if name == "wx_meteogram_warm_store":
+        return meteogram_tool.warm_store(ENV, **_with_run(args, key="run_str"))
 
     if name == "wx_radar":
         return radar_tool.radar(ENV, **args)

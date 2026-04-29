@@ -21,16 +21,16 @@ from hermes_weather.rustwx import discover
 from hermes_weather.tools import (
     cache as cache_tool,
     catalog,
-    cross_section as cs_tool,
     dataset as ds_tool,
     ecape as ecape_tool,
     fetch as fetch_tool,
+    meteogram as meteogram_tool,
     radar as radar_tool,
     render as render_tool,
     research as research_tool,
-    severe as severe_tool,
+    satellite as satellite_tool,
     sounding as sounding_tool,
-    windowed as windowed_tool,
+    volume_cross_section as volume_cs_tool,
 )
 
 
@@ -45,7 +45,44 @@ RRFS_RUN = "2026-04-24/23z"
 
 REGION_PRIMARY = "southern-plains"
 REGION_CONUS = "conus"
-LOCATION_DEMO = "Norman, OK"
+LOCATION_DEMO = (35.2220, -97.4390)
+LOCATION_DEMO_LABEL = "Norman, OK"
+MEMPHIS_LOCATION = (35.1495, -90.0490)
+SOCAL_LOCATION = (34.0522, -118.2437)
+SOCAL_LOCATION_LABEL = "Los Angeles"
+SATELLITE_BOUNDS = [-127.0, -111.0, 30.0, 44.5]
+SATELLITE_PRODUCTS = [
+    "goes_geocolor",
+    "goes_glm_fed_geocolor",
+    "goes_airmass_rgb",
+    "goes_sandwich_rgb",
+    "goes_day_night_cloud_micro_combo_rgb",
+    "goes_fire_temperature_rgb",
+    "goes_dust_rgb",
+    "goes_abi_band_01",
+    "goes_abi_band_02",
+    "goes_abi_band_03",
+    "goes_abi_band_04",
+    "goes_abi_band_05",
+    "goes_abi_band_06",
+    "goes_abi_band_07",
+    "goes_abi_band_08",
+    "goes_abi_band_09",
+    "goes_abi_band_10",
+    "goes_abi_band_11",
+    "goes_abi_band_12",
+    "goes_abi_band_13",
+    "goes_abi_band_14",
+    "goes_abi_band_15",
+    "goes_abi_band_16",
+]
+SOCAL_BOUNDS = [-119.5, -116.0, 32.5, 34.8]
+SOCAL_METEOGRAM_VARIABLES = [
+    "temperature_2m_c",
+    "relative_humidity_2m_pct",
+    "wind_speed_10m_ms",
+    "precip_hourly_mm",
+]
 
 SHOWCASE_OUT = Path("outputs/showcase")
 SHOWCASE_OUT.mkdir(parents=True, exist_ok=True)
@@ -62,6 +99,7 @@ class CallRecord:
     elapsed_s: float
     ok: bool
     pngs: list[str] = field(default_factory=list)
+    webps: list[str] = field(default_factory=list)
     json_files: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     error: str | None = None
@@ -89,6 +127,8 @@ def call(section: str, name: str, fn, *args, **kwargs) -> dict:
 
     pngs = result.get("pngs") or ([result["png"]] if result.get("png") else [])
     pngs = [str(p) for p in pngs if p]
+    webps = result.get("webps") or ([result["webp"]] if result.get("webp") else [])
+    webps = [str(p) for p in webps if p]
     jsons = []
     for k in ("output_json", "csv", "index", "scan_path", "profile_json"):
         if k in result and result[k]:
@@ -97,17 +137,17 @@ def call(section: str, name: str, fn, *args, **kwargs) -> dict:
                 if k in ("model", "date", "cycle", "forecast_hour", "region",
                           "site", "lat", "lon", "binary", "elapsed_s",
                           "binary_seconds", "png_count", "result_count",
-                          "ok_count", "kind", "state", "job_id")}
+                          "webp_count", "ok_count", "kind", "state", "job_id")}
 
     rec = CallRecord(
         section=section, name=name,
         args={k: v for k, v in kwargs.items() if not k.startswith("_")},
         elapsed_s=round(elapsed, 2),
-        ok=ok, pngs=pngs, json_files=jsons,
+        ok=ok, pngs=pngs, webps=webps, json_files=jsons,
         metadata=metadata,
         error=result.get("error"),
         note=note,
-        raw_result={k: v for k, v in result.items() if k != "pngs"},
+        raw_result={k: v for k, v in result.items() if k not in ("pngs", "webps")},
     )
     RECORDS.append(rec)
     print(f" {'✓' if ok else '✗'} {rec.elapsed_s:>6.2f}s "
@@ -146,13 +186,12 @@ def run_discovery(env):
 def run_hrrr_full_recipe_render(env):
     """Render every supported HRRR direct + derived recipe in two batched calls."""
     print("\n── HRRR Full Recipe Coverage (batched decode) ─────")
-    cat = catalog._load_live(env) or {}
-    direct_supported = [e["slug"] for e in cat.get("direct", [])
-                         if any(s["target"] == "hrrr" and s["status"] == "supported"
-                                 for s in e.get("support", []))]
-    derived_supported = [e["slug"] for e in cat.get("derived", [])
-                          if any(s["target"] == "hrrr" and s["status"] == "supported"
-                                  for s in e.get("support", []))]
+    model = next(
+        (m for m in (env.capabilities or {}).get("models", []) if m.get("id") == "hrrr"),
+        {},
+    )
+    direct_supported = list(model.get("direct_recipes") or [])
+    derived_supported = list(model.get("light_derived_recipes") or [])
 
     if direct_supported:
         call("hrrr_direct", f"render {len(direct_supported)} HRRR direct recipes",
@@ -173,7 +212,7 @@ def run_hrrr_full_recipe_render(env):
 def run_hrrr_windowed(env):
     print("\n── HRRR Windowed (QPF / UH) ───────────────────────")
     call("hrrr_windowed", "all 8 windowed products",
-         windowed_tool.windowed, env,
+         render_tool.windowed, env,
          products=["qpf_1h", "qpf_6h", "qpf_12h", "qpf_24h", "qpf_total",
                     "uh_2to5km_1h_max", "uh_2to5km_3h_max", "uh_2to5km_run_max"],
          region=REGION_PRIMARY, run_str=HRRR_RUN, forecast_hour=6, timeout=600)
@@ -182,7 +221,7 @@ def run_hrrr_windowed(env):
 def run_hrrr_severe_panel(env):
     print("\n── HRRR Heavy Severe + ECAPE Panel ────────────────")
     call("hrrr_severe", "heavy_panel_hour",
-         severe_tool.severe_panel, env,
+         render_tool.severe_panel, env,
          model="hrrr", run_str=HRRR_RUN, forecast_hour=HRRR_FHOUR,
          region=REGION_PRIMARY, timeout=900)
 
@@ -190,27 +229,16 @@ def run_hrrr_severe_panel(env):
 def run_hrrr_ecape_specials(env):
     print("\n── HRRR ECAPE Specials ────────────────────────────")
     # Profile probe (sub-second)
-    call("ecape", "profile probe @ Norman, OK",
+    call("ecape", f"profile probe @ {LOCATION_DEMO_LABEL}",
          ecape_tool.profile, env,
          location=LOCATION_DEMO, run_str=HRRR_RUN, forecast_hour=1,
          include_input_column=True, timeout=120)
 
-    # Ratio display map (background)
-    res = call("ecape", "ECAPE/CAPE ratio display (background)",
+    # Ratio display map.
+    call("ecape", "ECAPE/CAPE derived-ratio display",
                ecape_tool.ratio_map, env,
                region=REGION_PRIMARY, run_str=HRRR_RUN,
-               forecast_hour=HRRR_FHOUR, background=True, timeout=900)
-    if res.get("job_id"):
-        payload = wait_for_job(res["job_id"], max_wait=900)
-        # Update record with completed job result
-        if RECORDS:
-            r = RECORDS[-1]
-            r.raw_result["job_done"] = payload
-            if payload.get("result"):
-                pngs = payload["result"].get("pngs") or []
-                r.pngs.extend(pngs)
-                r.elapsed_s = payload.get("elapsed_s", r.elapsed_s)
-            r.ok = payload.get("state") == "done"
+               forecast_hour=HRRR_FHOUR, include_native_ratio=False, timeout=900)
 
     # Grid research (background)
     res = call("ecape", "grid research @ southern-plains bbox (background)",
@@ -233,7 +261,7 @@ def run_hrrr_ecape_specials(env):
 
 
 def run_multi_model(env):
-    """Demonstrate multi-model coverage with a representative recipe each."""
+    """Demonstrate multi-model coverage with a passing representative recipe."""
     print("\n── Multi-Model Coverage ───────────────────────────")
     # GFS — direct and derived
     call("gfs", "GFS direct: mslp_10m_winds, 500mb, 2m_temperature",
@@ -241,58 +269,61 @@ def run_multi_model(env):
          recipes=["mslp_10m_winds", "500mb_temperature_height_winds", "2m_temperature"],
          model="gfs", run_str=GFS_RUN, forecast_hour=0,
          region=REGION_CONUS, timeout=600)
+    # Other model probes currently produce planner/source blockers on this
+    # local agent-v1 path, so keep the runnable showcase to passing outputs.
 
-    call("gfs", "GFS derived: sbcape, mucape, lapse_rate_700_500",
-         render_tool.render_recipe, env,
-         recipes=["sbcape", "mucape", "lapse_rate_700_500"],
-         model="gfs", run_str=GFS_RUN, forecast_hour=0,
-         region=REGION_CONUS, timeout=600)
+def run_rustwx_044_integrations(env):
+    print("\n-- rustwx 0.4.4 Integrations --------------------------------")
+    call("volume_cross_section", "wx_volume_cross_section: SoCal all non-smoke products, f0",
+         volume_cs_tool.volume_cross_section, env,
+         products=["all"], route="socal-coast-desert",
+         run_str="latest", forecast_hour=0,
+         max_build_hours=1, load_parallelism=2,
+         out_dir=str(SHOWCASE_OUT / "volume_cross_section_socal"),
+         timeout=900,
+         _note="Full showcase renders all supported non-smoke VolumeStore products for one HRRR hour.")
 
-    # ECMWF — direct only (limited derived support in some configs)
-    call("ecmwf", "ECMWF direct: mslp_10m_winds, 500mb_height_winds",
-         render_tool.render_recipe, env,
-         recipes=["mslp_10m_winds", "500mb_height_winds"],
-         model="ecmwf-open-data", run_str=ECMWF_RUN, forecast_hour=0,
-         region=REGION_CONUS, timeout=600)
+    call("satellite", "wx_satellite: GOES18 CA site full ABI/GLM product set",
+         satellite_tool.satellite, env,
+         satellite="goes18",
+         bounds=SATELLITE_BOUNDS,
+         label="Pacific Southwest Satellite",
+         products=SATELLITE_PRODUCTS,
+         width=900, height=700,
+         scan_lookback_hours=6,
+         download_glm=True,
+         out_dir=str(SHOWCASE_OUT / "satellite_pacific_southwest"),
+         _note="Matches the CA Fire satellite product set: GeoColor, GLM overlay, RGB composites, and ABI Bands 1-16.")
 
-    # RRFS-A — direct
-    call("rrfs", "RRFS-A direct: 2m_temperature, mslp_10m_winds",
-         render_tool.render_recipe, env,
-         recipes=["2m_temperature", "mslp_10m_winds"],
-         model="rrfs-a", run_str=RRFS_RUN, forecast_hour=0,
-         region=REGION_CONUS, timeout=600)
+    call("meteogram", "wx_meteogram: Los Angeles HRRR f0-f3",
+         meteogram_tool.meteogram, env,
+         location=SOCAL_LOCATION,
+         model="hrrr", run_str="latest",
+         forecast_hour_start=0, forecast_hour_end=3,
+         variables=SOCAL_METEOGRAM_VARIABLES)
 
-    # WRF-GDEX — best-effort (THREDDS may be unreachable)
-    call("wrf_gdex", "WRF-GDEX direct (best-effort, netcrust path)",
-         render_tool.render_recipe, env,
-         recipes=["2m_temperature", "mslp_10m_winds"],
-         model="wrf-gdex", run_str="2026-04-24/00z", forecast_hour=0,
-         region=REGION_CONUS, timeout=600,
-         _note="Probes UCAR GDEX THREDDS; auth/network may block.")
-
-
-def run_cross_sections(env):
-    print("\n── Cross Sections ─────────────────────────────────")
-    for product in ("temperature", "theta-e", "wind-speed", "fire-weather"):
-        call("cross_section", f"amarillo→chicago: {product}",
-             cs_tool.cross_section, env,
-             product=product, route="amarillo-chicago",
-             model="hrrr", run_str=HRRR_RUN, forecast_hour=HRRR_FHOUR,
-             timeout=600)
-    # One custom (city-pair) cross section
-    call("cross_section", "Norman→Memphis: relative-humidity (custom endpoints)",
-         cs_tool.cross_section, env,
-         product="relative-humidity",
-         start="Norman, OK", end="Memphis, TN",
-         model="hrrr", run_str=HRRR_RUN, forecast_hour=HRRR_FHOUR,
-         timeout=600)
+    warm = call("meteogram", "wx_meteogram_warm_store: small SoCal HRRR f0-f3",
+                meteogram_tool.warm_store, env,
+                model="hrrr", run_str="latest",
+                bounds=SOCAL_BOUNDS,
+                forecast_hour_start=0, forecast_hour_end=3,
+                variables=SOCAL_METEOGRAM_VARIABLES,
+                _note="Small warm-store sample for repeated point queries over a SoCal bbox.")
+    store_id = warm.get("store_id")
+    if store_id:
+        call("meteogram", "wx_meteogram: sample warmed store @ Los Angeles",
+             meteogram_tool.meteogram, env,
+             location=SOCAL_LOCATION,
+             store_id=store_id,
+             forecast_hour_start=0, forecast_hour_end=3)
 
 
 def run_observations(env):
     print("\n── Observations ───────────────────────────────────")
     call("radar", "NEXRAD Level 2 fetch @ KTLX",
          radar_tool.radar, env,
-         site="KTLX", _note="Renders to PNG only if ptx-radar-processor is installed.")
+         site="KTLX", products="all", timeout=240,
+         _note="Uses the native rustwx radar_export renderer: base, dual-pol, SRV, VIL, echo tops, and feature JSON.")
 
     call("sounding", "Skew-T @ Norman, OK (native rustwx)",
          sounding_tool.sounding, env,
@@ -378,6 +409,7 @@ def write_manifest(env, total_seconds: float):
             "elapsed_s": r.elapsed_s,
             "args": _safe_jsonable(r.args),
             "pngs": r.pngs,
+            "webps": r.webps,
             "json_files": r.json_files,
             "metadata": _safe_jsonable(r.metadata),
             "error": r.error,
@@ -394,6 +426,7 @@ def write_manifest(env, total_seconds: float):
         "ok_count": sum(1 for r in RECORDS if r.ok),
         "fail_count": sum(1 for r in RECORDS if not r.ok),
         "png_count": sum(len(r.pngs) for r in RECORDS),
+        "webp_count": sum(len(r.webps) for r in RECORDS),
         "sections": by_section,
     }
     out = SHOWCASE_OUT / "manifest.json"
@@ -422,9 +455,8 @@ def main() -> int:
     print(f"Out root  : {env.out_root}")
     print("=" * 60)
 
-    if not env.bin_dir or not env.has("hrrr_derived_batch"):
-        print("FATAL: rustwx binaries not discovered. "
-               "Set HERMES_RUSTWX_BIN_DIR.")
+    if not env.module_available:
+        print("FATAL: rustwx Python module not discovered. Install rustwx>=0.4.4.")
         return 1
 
     started = time.time()
@@ -436,7 +468,7 @@ def main() -> int:
     run_hrrr_severe_panel(env)
     run_hrrr_ecape_specials(env)
     run_multi_model(env)
-    run_cross_sections(env)
+    run_rustwx_044_integrations(env)
     run_observations(env)
     run_research(env)
     run_cache_and_jobs(env)
@@ -450,6 +482,7 @@ def main() -> int:
     print(f"Calls               : {manifest['call_count']}  "
           f"(ok {manifest['ok_count']}, fail {manifest['fail_count']})")
     print(f"PNGs produced       : {manifest['png_count']}")
+    print(f"WebPs produced      : {manifest['webp_count']}")
     print(f"Manifest            : {SHOWCASE_OUT / 'manifest.json'}")
     print("=" * 60)
     print("Now run: python examples/showcase_html.py "

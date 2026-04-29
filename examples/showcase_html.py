@@ -42,6 +42,13 @@ SECTION_TITLES = {
 # ── HTML helpers ────────────────────────────────────────────────────────
 
 
+SECTION_TITLES.update({
+    "volume_cross_section": ("HRRR VolumeStore cross sections", "V"),
+    "satellite": ("GOES satellite", "S"),
+    "meteogram": ("Point meteograms", "M"),
+})
+
+
 CSS = """
 :root {
   --bg: #0b0d12;
@@ -228,6 +235,7 @@ def page(manifest: dict, body: str) -> str:
     <div class="stats">
       <div class="stat"><div class="num">{manifest['call_count']}</div><div class="lbl">Tool calls</div></div>
       <div class="stat"><div class="num">{manifest['png_count']}</div><div class="lbl">PNGs</div></div>
+      <div class="stat"><div class="num">{manifest.get('webp_count', 0)}</div><div class="lbl">WebPs</div></div>
       <div class="stat"><div class="num">{manifest['ok_count']}</div><div class="lbl">Succeeded</div></div>
       <div class="stat"><div class="num">{manifest['total_seconds']:.0f}s</div><div class="lbl">Total runtime</div></div>
     </div>
@@ -259,7 +267,7 @@ def render_section(section: str, calls: list[dict]) -> str:
     total = sum(c.get("elapsed_s", 0) for c in calls)
     ok = sum(1 for c in calls if c.get("ok"))
 
-    has_pngs = any(c.get("pngs") for c in calls)
+    has_pngs = any(c.get("pngs") or c.get("webps") for c in calls)
     grid_class = "grid-img" if has_pngs else "grid-text"
     cards = []
 
@@ -300,10 +308,11 @@ def _render_card(section: str, c: dict) -> str:
     meta_html = ('<div class="meta">' + "".join(meta_chips) + '</div>') if meta_chips else ""
 
     pngs_html = ""
-    for png in c.get("pngs", [])[:8]:  # limit to 8 per card
-        rel = _ensure_image(section, c.get("name", ""), png)
+    images = c.get("webps") or c.get("pngs") or []
+    for image_path in images:
+        rel = _ensure_image(section, c.get("name", ""), image_path)
         if rel:
-            pngs_html += f'<img src="{html_mod.escape(rel)}" loading="lazy" alt="{html_mod.escape(Path(png).name)}">'
+            pngs_html += f'<img src="{html_mod.escape(rel)}" loading="lazy" alt="{html_mod.escape(Path(image_path).name)}">'
 
     err_html = ""
     if c.get("error"):

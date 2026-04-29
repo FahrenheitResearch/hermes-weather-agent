@@ -52,7 +52,7 @@ pip install rustwx hermes-weather-agent
 weather-mcp --doctor
 ```
 
-That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.0` is required because that release routes heavy ECAPE products through the same API.
+That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.4` is required for the map, satellite, and point-timeseries Python APIs used here.
 
 `weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and `domain_count: 77`.
 
@@ -61,7 +61,7 @@ That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rust
 A small set of tools sit *outside* the agent-v1 contract today and need rustwx workspace binaries to be built locally:
 
 - `wx_sounding` (skew-T renderer)
-- `wx_cross_section`
+- `wx_cross_section` / `wx_volume_cross_section` (HRRR pressure VolumeStore renderer; all non-smoke wxsection styles)
 - `wx_ecape_profile` (single-point ECAPE probe)
 - `wx_ecape_grid` (full-grid ECAPE swath research)
 
@@ -70,9 +70,11 @@ If you want those too:
 ```bash
 git clone https://github.com/FahrenheitResearch/rustwx
 cd rustwx
-cargo build --release \
+cargo build -p rustwx-cli --release \
   --bin sounding_plot \
-  --bin cross_section_proof \
+  --bin hrrr_pressure_volume_store \
+  --bin volume_store_cross_section_render \
+  --bin radar_export \
   --bin hrrr_ecape_profile_probe \
   --bin hrrr_ecape_grid_research
 
@@ -114,7 +116,7 @@ weather-mcp --doctor    # binary discovery + product catalog state
 weather-mcp --test      # smoke-test render
 ```
 
-## Tools (28 total)
+## Tools (32 total)
 
 ### Discovery
 | Tool | Purpose |
@@ -148,8 +150,12 @@ weather-mcp --test      # smoke-test render
 ### Vertical / observations
 | Tool | Purpose |
 |---|---|
-| `wx_cross_section` | Vertical cross section through model fields (route presets or city pairs) |
-| `wx_radar` | Fetch nearest NEXRAD Level 2 scan |
+| `wx_cross_section` | Compatibility alias for HRRR pressure VolumeStore cross sections |
+| `wx_volume_cross_section` | HRRR pressure VolumeStore cross sections; builds a short-lived 1-3 hour local store and renders PNG/WebP for all non-smoke wxsection styles |
+| `wx_satellite` | Latest GOES satellite imagery via `rustwx.render_goes_satellite_json`; CA Fire default is GeoColor, GLM overlay, RGB composites, and ABI Bands 1-16 |
+| `wx_meteogram` | Point forecast time series via `rustwx.sample_point_timeseries_json`, or a warmed store when `store_id` is supplied |
+| `wx_meteogram_warm_store` | Warm a point-timeseries grid store for repeated meteogram sampling |
+| `wx_radar` | Native rustwx NEXRAD Level-II rendering via `radar_export`: base, dual-pol, SRV, VIL, echo tops, and feature JSON |
 | `wx_sounding` | Skew-T at (lat, lon) rendered by rustwx's native `sounding_plot` binary; supports `sample_method="box-mean"` with `box_radius_km` |
 
 ### Research mode
@@ -174,7 +180,7 @@ python examples/showcase_full.py        # ~3 min with warm cache, ~5 min cold
 python examples/showcase_html.py        # builds outputs/showcase/index.html
 ```
 
-Last full run produced **198 PNGs across 28 successful tool calls in 207 s**, organised into 17 sections (HRRR direct/derived/windowed/severe, ECAPE specialists, multi-model GFS, cross sections, radar, sounding, research-mode profile sweep, mini dataset, cache management). Open `outputs/showcase/index.html` after running.
+The showcase includes HRRR VolumeStore cross sections, the CA Fire GOES18 product set, direct point meteograms, warmed point-timeseries store sampling, and native rustwx radar export. Open `outputs/showcase/index.html` after running.
 
 Top wall-time consumers from the canonical run:
 
@@ -199,7 +205,10 @@ Every tool is also a plain Python function:
 
 ```python
 from hermes_weather.rustwx import discover
-from hermes_weather.tools import render, ecape, cross_section, catalog
+from hermes_weather.tools import (
+    render, ecape, volume_cross_section,
+    satellite, meteogram, radar, catalog,
+)
 
 env = discover()
 
@@ -214,12 +223,18 @@ prof = ecape.profile(env, location="Norman, OK",
                      include_input_column=True)
 print(prof["diagnostics"]["parcels"][1]["ratio_ecape_to_undiluted_cape"])
 
-# Vertical cross section, custom city pair
-xs = cross_section.cross_section(
-    env, product="theta-e",
-    start="Amarillo, TX", end="Chicago, IL",
-    run_str="latest", forecast_hour=6,
+# HRRR VolumeStore cross sections: temporary 1-hour SoCal cube,
+# all non-smoke wxsection styles, PNG + WebP outputs.
+fast_xs = volume_cross_section.volume_cross_section(
+    env, products=["all"], route="socal-coast-desert",
+    run_str="latest", forecast_hour=0,
 )
+
+# CA Fire satellite set, short point meteogram, and native radar export.
+sat = satellite.satellite(env, products=satellite.DEFAULT_PRODUCTS)
+met = meteogram.meteogram(env, location=(34.0522, -118.2437),
+                          forecast_hour_start=0, forecast_hour_end=3)
+rad = radar.radar(env, site="KTLX", products="all")
 
 # Discover what every recipe is and where it works
 products = catalog.products(env, kind="derived", search="ecape")

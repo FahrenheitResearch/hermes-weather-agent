@@ -1,99 +1,70 @@
-"""Cross-section tool — optional binary path until rustwx ships a Python API.
+"""Compatibility wrapper for HRRR VolumeStore cross sections.
 
-`rustwx.normalize_cross_section_request_json` exists but is a request
-normaliser, not a renderer. Until rustwx exposes a one-shot fetch+render
-Python API, this tool subprocess-calls the optional `cross_section_proof`
-binary.
+The legacy proof renderer is intentionally not used here.
+All Hermes cross-section calls now route through the pressure VolumeStore
+path so future model support can extend that store architecture instead of
+reviving the old proof binary.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-from ..geo import resolve_location
-from ..rustwx import RustwxEnv, parse_run, resolve_latest_run, run
-from .catalog import CROSS_SECTION_PRODUCTS, CROSS_SECTION_ROUTES
+from ..rustwx import RustwxEnv
+from .volume_cross_section import volume_cross_section
 
 
 def cross_section(
     env: RustwxEnv,
     *,
     product: str = "temperature",
-    route: str | None = None,
+    route: str | None = "socal-coast-desert",
     start=None,
     end=None,
-    model: str = "hrrr",
     run_str: str = "latest",
-    forecast_hour: int = 0,
-    source: str = "aws",
-    palette: str | None = None,
-    sample_count: int = 181,
-    no_wind_overlay: bool = False,
+    forecast_hour: int | None = 0,
+    forecast_hours: list[int] | None = None,
+    forecast_hour_start: int | None = None,
+    forecast_hour_end: int | None = None,
+    source: str = "nomads",
+    spacing_km: float = 10.0,
+    width: int = 1400,
+    height: int = 820,
+    top_pressure_hpa: int = 100,
+    bounds_padding_deg: float = 1.5,
+    load_parallelism: int = 2,
+    max_build_hours: int = 3,
+    allow_more_hours: bool = False,
+    store_ttl_hours: float = 6.0,
+    keep_store: bool = True,
     out_dir: str | None = None,
-    timeout: int = 600,
+    timeout: int = 900,
+    **_legacy_options,
 ) -> dict:
-    binary = "cross_section_proof"
-    if not env.has_binary(binary):
-        return {
-            "ok": False,
-            "error": (
-                f"{binary} binary not built. The cross-section renderer "
-                "isn't in the agent-v1 contract yet. Build with: "
-                f"cargo build --release --bin {binary}"
-            ),
-        }
-    if product not in CROSS_SECTION_PRODUCTS:
-        return {"ok": False, "error": f"unknown product {product!r}",
-                "available": CROSS_SECTION_PRODUCTS}
-    if route is not None and route not in CROSS_SECTION_ROUTES:
-        return {"ok": False, "error": f"unknown route {route!r}",
-                "available": CROSS_SECTION_ROUTES}
+    """Render one HRRR VolumeStore cross section.
 
-    custom_pts = (start is not None and end is not None)
-    if not route and not custom_pts:
-        route = "amarillo-chicago"
-
-    date, cycle = (resolve_latest_run(model) if run_str == "latest" else parse_run(run_str))
-    out_root = Path(out_dir) if out_dir else (
-        env.out_root / "cross_section" /
-        f"{date}_{cycle:02d}z_f{forecast_hour:03d}_{product}_{route or 'custom'}"
+    `model`, `palette`, `sample_count`, and `no_wind_overlay` from the old
+    proof renderer are accepted via `**_legacy_options` and ignored.
+    """
+    return volume_cross_section(
+        env,
+        product=product,
+        route=route,
+        start=start,
+        end=end,
+        run_str=run_str,
+        forecast_hour=forecast_hour,
+        forecast_hours=forecast_hours,
+        forecast_hour_start=forecast_hour_start,
+        forecast_hour_end=forecast_hour_end,
+        source=source,
+        spacing_km=spacing_km,
+        width=width,
+        height=height,
+        top_pressure_hpa=top_pressure_hpa,
+        bounds_padding_deg=bounds_padding_deg,
+        load_parallelism=load_parallelism,
+        max_build_hours=max_build_hours,
+        allow_more_hours=allow_more_hours,
+        store_ttl_hours=store_ttl_hours,
+        keep_store=keep_store,
+        out_dir=out_dir,
+        timeout=timeout,
     )
-
-    args = [
-        "--model", model,
-        "--product", product,
-        "--date", date,
-        "--cycle", str(cycle),
-        "--forecast-hour", str(forecast_hour),
-        "--source", source,
-        "--sample-count", str(sample_count),
-        "--cache-dir", str(env.cache_dir.resolve()),
-    ]
-    if route:
-        args.extend(["--route", route])
-    if custom_pts:
-        sll = resolve_location(start)
-        ell = resolve_location(end)
-        if sll is None or ell is None:
-            return {"ok": False, "error": f"could not resolve start/end: {start}, {end}"}
-        args.extend([
-            f"--start-lat={sll[0]:.6f}",
-            f"--start-lon={sll[1]:.6f}",
-            f"--end-lat={ell[0]:.6f}",
-            f"--end-lon={ell[1]:.6f}",
-        ])
-    if palette:
-        args.extend(["--palette", palette])
-    if no_wind_overlay:
-        args.append("--no-wind-overlay")
-
-    result = run(env, binary, args, out_dir=out_root, timeout=timeout)
-    return {
-        "ok": result.ok,
-        "model": model, "product": product, "route": route,
-        "date": date, "cycle": cycle, "forecast_hour": forecast_hour,
-        "out_dir": str(out_root),
-        "pngs": [str(p) for p in result.pngs],
-        "png_count": len(result.pngs),
-        "elapsed_s": round(result.seconds, 2),
-        "stderr_tail": result.stderr.splitlines()[-8:] if result.stderr else [],
-    }

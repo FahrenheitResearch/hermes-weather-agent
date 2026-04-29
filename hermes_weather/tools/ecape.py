@@ -227,13 +227,15 @@ def ratio_map(
     forecast_hour: int = 0,
     source: str = "aws",
     parcel: str = "ml",
+    include_native_ratio: bool = False,
     out_dir: str | None = None,
     timeout: int = 1800,
 ) -> dict:
     """ECAPE/CAPE ratio render — routes through render_maps_json now.
 
-    By default emits the MLECAPE map plus the ML ECAPE/CAPE derived-CAPE
-    and native-CAPE ratio variants together (Figure-4 product family).
+    By default emits the ECAPE map plus the derived-CAPE ratio variant.
+    Native-CAPE ratios are opt-in because not every rustwx build exposes
+    the native CAPE fields needed by the heavy ECAPE renderer.
     """
     if not env.module_available:
         return {
@@ -248,8 +250,9 @@ def ratio_map(
         f"{parcel}ecape",
         f"{parcel}cape",
         f"{parcel}_ecape_derived_cape_ratio",
-        f"{parcel}_ecape_native_cape_ratio",
     ]
+    if include_native_ratio:
+        recipes.append(f"{parcel}_ecape_native_cape_ratio")
     date, cycle = _resolve_run(run_str, model)
     domain_slug, computed_bounds = resolve_to_domain(
         env, region=region, domain=domain, location=location

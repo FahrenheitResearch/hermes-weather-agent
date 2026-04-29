@@ -2,7 +2,7 @@
 
 The plugin's primary path is the rustwx Python API (agent-v1 contract):
 
-    pip install rustwx>=0.4
+    pip install rustwx>=0.4.4
     import rustwx
     rustwx.agent_capabilities_json()
     rustwx.list_domains_json()
@@ -12,7 +12,7 @@ That covers all map rendering — direct, light derived, heavy ECAPE, and
 HRRR windowed products — with no Rust toolchain on the user's machine.
 
 A handful of specialty paths (sounding, cross sections, single-point
-ECAPE profile probe, full-grid ECAPE research swath) aren't in the
+ECAPE profile probe, full-grid ECAPE research swath, radar export) aren't in the
 formal agent-v1 contract yet. Those tools fall back to optional rustwx
 proof binaries discovered on disk via HERMES_RUSTWX_BIN_DIR / PATH; if
 the binaries aren't built, the corresponding MCP tools degrade with a
@@ -38,7 +38,9 @@ EXE = ".exe" if IS_WINDOWS else ""
 # of the plugin (maps, ECAPE, windowed, heavy panels).
 OPTIONAL_BINARIES = [
     "sounding_plot",                 # native skew-T renderer
-    "cross_section_proof",           # vertical cross sections
+    "hrrr_pressure_volume_store",    # HRRR pressure VolumeStore builder
+    "volume_store_cross_section_render",  # fast VolumeStore cross-section renderer
+    "radar_export",                  # native Rust NEXRAD Level-II renderer
     "hrrr_ecape_profile_probe",      # single-point ECAPE diagnostics
     "hrrr_ecape_grid_research",      # swath-scale ECAPE statistics
     "hrrr_ecape_ratio_display",      # legacy ratio panel (render_maps_json now covers single recipes)
@@ -90,7 +92,8 @@ class RustwxBinaryMissing(RuntimeError):
             f"rustwx binary '{name}' not found"
             + (f" in {bin_dir}" if bin_dir else "")
             + ". This is an optional binary used by specialty tools (sounding,"
-              " cross sections, ECAPE profile probe, ECAPE grid research)."
+              " cross sections, VolumeStore cross sections, ECAPE profile probe,"
+              " ECAPE grid research)."
               " Build it with: cargo build --release --bin "
             + name
             + ", or set HERMES_RUSTWX_BIN_DIR to your rustwx target/release dir."

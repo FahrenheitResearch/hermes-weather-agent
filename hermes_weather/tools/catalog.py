@@ -13,19 +13,14 @@ from __future__ import annotations
 import json
 
 from ..rustwx import RustwxEnv, list_domains as _list_domains
+from .volume_cross_section import ROUTES as VOLUME_CROSS_SECTION_ROUTES_BY_ID
+from .volume_cross_section import VOLUME_PRODUCTS as VOLUME_CROSS_SECTION_PRODUCTS
 
 # Cross-section product palette — kept in code because the cross-section
 # render path isn't part of agent-v1 yet.
-CROSS_SECTION_PRODUCTS = [
-    "temperature", "relative-humidity", "specific-humidity", "theta-e",
-    "wind-speed", "wet-bulb", "vapor-pressure-deficit",
-    "dewpoint-depression", "moisture-transport", "fire-weather",
-]
-CROSS_SECTION_ROUTES = [
-    "amarillo-chicago", "kansas-city-chicago",
-    "san-francisco-tahoe", "sacramento-reno",
-    "los-angeles-mojave", "san-diego-imperial",
-]
+CROSS_SECTION_PRODUCTS = VOLUME_CROSS_SECTION_PRODUCTS
+CROSS_SECTION_ROUTES = sorted(VOLUME_CROSS_SECTION_ROUTES_BY_ID)
+VOLUME_CROSS_SECTION_ROUTES = sorted(VOLUME_CROSS_SECTION_ROUTES_BY_ID)
 
 
 def _require_caps(env: RustwxEnv) -> dict | None:
@@ -91,6 +86,16 @@ def recipes(env: RustwxEnv, *, model: str = "hrrr") -> dict:
         "windowed": m.get("windowed_products") or m.get("windowed_recipes") or [],
         "cross_section_products": CROSS_SECTION_PRODUCTS,
         "cross_section_routes": CROSS_SECTION_ROUTES,
+        "volume_cross_section_products": VOLUME_CROSS_SECTION_PRODUCTS,
+        "volume_cross_section_routes": VOLUME_CROSS_SECTION_ROUTES,
+        "cross_section_notes": (
+            "HRRR only; wx_cross_section is a compatibility alias for "
+            "wx_volume_cross_section and uses the pressure VolumeStore path."
+        ),
+        "volume_cross_section_notes": (
+            "HRRR only; uses a temporary pressure VolumeStore; all listed products "
+            "are wxsection-compatible non-smoke styles."
+        ),
     }
 
 
@@ -176,21 +181,31 @@ def doctor(env: RustwxEnv) -> dict:
     }
     info["specialty_tools"] = {
         "sounding":             env.has_binary("sounding_plot"),
-        "cross_section":        env.has_binary("cross_section_proof"),
+        "cross_section": (
+            env.has_binary("hrrr_pressure_volume_store")
+            and env.has_binary("volume_store_cross_section_render")
+        ),
+        "volume_cross_section": (
+            env.has_binary("hrrr_pressure_volume_store")
+            and env.has_binary("volume_store_cross_section_render")
+        ),
+        "radar":               env.has_binary("radar_export"),
         "ecape_profile_probe":  env.has_binary("hrrr_ecape_profile_probe"),
         "ecape_grid_research":  env.has_binary("hrrr_ecape_grid_research"),
     }
     if env.module_available:
         info["advice"] = (
             "Map rendering (direct/derived/heavy ECAPE/windowed) is fully "
-            "available via the rustwx agent-v1 API. Specialty tools "
-            "(sounding, cross sections, ECAPE profile probe, ECAPE grid "
-            "research) require the corresponding optional binaries built "
-            "from the rustwx workspace; build them with cargo build "
-            "--release --bin <name> and set HERMES_RUSTWX_BIN_DIR."
+            "available via the rustwx agent-v1 API. Satellite and point "
+            "meteogram calls require rustwx>=0.4.4. Specialty tools "
+            "(sounding, VolumeStore cross sections, radar export, "
+            "ECAPE profile probe, ECAPE grid research) require the "
+            "corresponding optional binaries built from the rustwx workspace; "
+            "build them with cargo build -p rustwx-cli --release --bin <name> "
+            "and set HERMES_RUSTWX_BIN_DIR."
         )
     else:
-        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.4'"
+        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.4.4'"
     return info
 
 
@@ -198,5 +213,5 @@ def _module_error() -> dict:
     return {
         "ok": False,
         "error": "rustwx Python module not installed",
-        "fix": "pip install 'rustwx>=0.4'",
+        "fix": "pip install 'rustwx>=0.4.4'",
     }
