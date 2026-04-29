@@ -7,7 +7,6 @@ preset slugs via `find_domain_for_location`.
 """
 from __future__ import annotations
 
-import json
 import math
 import re
 from dataclasses import dataclass

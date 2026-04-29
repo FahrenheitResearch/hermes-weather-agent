@@ -9,7 +9,7 @@ from ..geo import resolve_location
 from ..rustwx import (
     RustwxEnv,
     parse_run,
-    resolve_latest_run,
+    resolve_latest_run_for_hours,
 )
 
 
@@ -38,6 +38,20 @@ def _hours_payload(
     if forecast_hour_end is not None:
         payload["forecast_hour_end"] = int(forecast_hour_end)
     return payload
+
+
+def _forecast_hour_list(
+    forecast_hours: list[int] | None,
+    forecast_hour_start: int | None,
+    forecast_hour_end: int | None,
+) -> list[int]:
+    if forecast_hours:
+        return sorted({int(hour) for hour in forecast_hours})
+    start = int(forecast_hour_start if forecast_hour_start is not None else 0)
+    end = int(forecast_hour_end if forecast_hour_end is not None else start)
+    if end < start:
+        raise ValueError("forecast_hour_end must be >= forecast_hour_start")
+    return list(range(start, end + 1))
 
 
 def _rustwx_json_call(env: RustwxEnv, function_name: str, request: dict) -> dict:
@@ -102,7 +116,25 @@ def meteogram(
         request["store_id"] = store_id
         function_name = "sample_point_timeseries_store_json"
     else:
-        date, cycle = resolve_latest_run(model) if run_str == "latest" else parse_run(run_str)
+        try:
+            requested_hours = _forecast_hour_list(
+                forecast_hours,
+                forecast_hour_start,
+                forecast_hour_end,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        date, cycle = (
+            resolve_latest_run_for_hours(
+                model,
+                source=source,
+                forecast_hours=requested_hours,
+                product="sfc",
+                synoptic_only=max(requested_hours) > 18,
+            )
+            if run_str == "latest"
+            else parse_run(run_str)
+        )
         request.update(
             {
                 "model": model,
@@ -154,7 +186,25 @@ def warm_store(
             "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.4'",
         }
 
-    date, cycle = resolve_latest_run(model) if run_str == "latest" else parse_run(run_str)
+    try:
+        requested_hours = _forecast_hour_list(
+            forecast_hours,
+            forecast_hour_start,
+            forecast_hour_end,
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    date, cycle = (
+        resolve_latest_run_for_hours(
+            model,
+            source=source,
+            forecast_hours=requested_hours,
+            product="sfc",
+            synoptic_only=max(requested_hours) > 18,
+        )
+        if run_str == "latest"
+        else parse_run(run_str)
+    )
     request: dict[str, Any] = {
         "model": model,
         "date_yyyymmdd": date,

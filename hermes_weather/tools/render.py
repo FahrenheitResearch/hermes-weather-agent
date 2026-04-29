@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from ..rustwx import RustwxEnv, parse_run, render_maps, resolve_latest_run
+from ..rustwx import RustwxEnv, parse_run, render_maps, resolve_latest_run_for_hours
 
 # Common region preset → domain slug mapping. rustwx 0.4 may accept the
 # region names directly; we normalise hyphen forms.
@@ -34,9 +34,20 @@ REGION_ALIASES = {
 }
 
 
-def _resolve_run(run_str: str, model: str) -> tuple[str, int]:
+def _resolve_run(
+    run_str: str,
+    model: str,
+    *,
+    source: str,
+    forecast_hour: int,
+) -> tuple[str, int]:
     if run_str == "latest":
-        return resolve_latest_run(model)
+        return resolve_latest_run_for_hours(
+            model,
+            source=source,
+            forecast_hours=[forecast_hour],
+            product="sfc",
+        )
     return parse_run(run_str)
 
 
@@ -92,7 +103,12 @@ def render_recipe(
     if not recipes:
         return {"ok": False, "error": "recipes is empty"}
 
-    date, cycle = _resolve_run(run_str, model)
+    date, cycle = _resolve_run(
+        run_str,
+        model,
+        source=source,
+        forecast_hour=forecast_hour,
+    )
     domain_slug = _resolve_domain(region, domain, location)
     out_root = Path(out_dir) if out_dir else (
         env.out_root / "render" / model /

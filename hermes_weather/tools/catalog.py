@@ -10,8 +10,6 @@ If `import rustwx` isn't installed, all functions degrade with a clear
 """
 from __future__ import annotations
 
-import json
-
 from ..rustwx import RustwxEnv, list_domains as _list_domains
 from .volume_cross_section import ROUTES as VOLUME_CROSS_SECTION_ROUTES_BY_ID
 from .volume_cross_section import VOLUME_PRODUCTS as VOLUME_CROSS_SECTION_PRODUCTS

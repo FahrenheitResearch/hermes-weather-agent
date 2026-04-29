@@ -27,8 +27,8 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 IS_WINDOWS = platform.system() == "Windows"
 EXE = ".exe" if IS_WINDOWS else ""
@@ -325,22 +325,114 @@ def parse_run(run_str: str) -> tuple[str, int]:
     return date, cycle
 
 
-def resolve_latest_run(model: str = "hrrr") -> tuple[str, int]:
+def available_forecast_hours(
+    model: str = "hrrr",
+    date_yyyymmdd: str | None = None,
+    cycle_utc: int | None = None,
+    *,
+    product: str = "sfc",
+    source: str = "nomads",
+) -> list[int]:
+    """Return advertised forecast hours for a model/product/cycle.
+
+    This mirrors the CA Fire runner's policy: resolve against live availability
+    instead of assuming that the newest cycle already has every requested hour.
+    """
+    if date_yyyymmdd is None or cycle_utc is None:
+        raise ValueError("date_yyyymmdd and cycle_utc are required")
+
+    # NOMADS directory listings are very fast and avoid expensive per-cycle
+    # resolver work for the common HRRR path.
+    if model.lower() == "hrrr" and source.lower() == "nomads":
+        try:
+            return _available_hrrr_nomads_hours(date_yyyymmdd, int(cycle_utc), product)
+        except Exception:
+            pass
+
+    try:
+        import rustwx
+
+        if hasattr(rustwx, "available_forecast_hours_json"):
+            payload = json.loads(
+                rustwx.available_forecast_hours_json(
+                    model,
+                    date_yyyymmdd,
+                    int(cycle_utc),
+                    product,
+                    source,
+                )
+            )
+            if isinstance(payload, list):
+                return sorted({int(hour) for hour in payload})
+            return sorted({int(hour) for hour in payload.get("forecast_hours", [])})
+    except Exception:
+        pass
+
+    # Lightweight HRRR fallback for environments where the wheel is older than
+    # the availability API. It is intentionally conservative and only knows the
+    # public NOMADS filename patterns.
+    if model.lower() != "hrrr":
+        return []
+
+    return _available_hrrr_nomads_hours(date_yyyymmdd, int(cycle_utc), product)
+
+
+def _available_hrrr_nomads_hours(date_yyyymmdd: str, cycle_utc: int, product: str) -> list[int]:
+    import re
+    import requests
+
+    product_key = {
+        "prs": "wrfprs",
+        "pressure": "wrfprs",
+        "nat": "wrfnat",
+        "native": "wrfnat",
+        "sfc": "wrfsfc",
+        "surface": "wrfsfc",
+    }.get(product.lower(), "wrfsfc")
+    url = f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.{date_yyyymmdd}/conus/"
+    response = requests.get(url, timeout=15)
+    response.raise_for_status()
+    pattern = re.compile(rf"hrrr\.t{int(cycle_utc):02d}z\.{product_key}f(\d{{2}})\.grib2")
+    return sorted({int(hour) for hour in pattern.findall(response.text)})
+
+
+def resolve_latest_run(model: str = "hrrr", source: str = "nomads") -> tuple[str, int]:
     """Resolve 'latest' by probing NOMADS HRRR directory.
 
     rustwx provides latest_run_json() too — when stable for all models
     we'll route through that instead.
     """
     import re
-    from datetime import datetime, timedelta, timezone
     import requests
 
-    bases = {"hrrr": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod"}
-    if model not in bases:
-        now = datetime.now(timezone.utc) - timedelta(hours=4)
-        return now.strftime("%Y%m%d"), now.hour
+    model_key = model.lower()
+    if model_key == "gfs":
+        now = datetime.now(timezone.utc)
+        seen: set[tuple[str, int]] = set()
+        for hour_offset in range(0, 96):
+            candidate = now - timedelta(hours=hour_offset)
+            cycle = (candidate.hour // 6) * 6
+            date = candidate.strftime("%Y%m%d")
+            key = (date, cycle)
+            if key in seen:
+                continue
+            seen.add(key)
+            url = (
+                "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
+                f"gfs.{date}/{cycle:02d}/atmos/gfs.t{cycle:02d}z.pgrb2.0p25.f000"
+            )
+            try:
+                if requests.head(url, timeout=10).ok:
+                    return date, cycle
+            except Exception:
+                continue
+        return _scheduled_latest_cycle(model_key)
 
-    base = bases[model]
+    bases = {"hrrr": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod"}
+    if model_key not in bases:
+        return _scheduled_latest_cycle(model_key)
+
+    base = bases[model_key]
     now = datetime.now(timezone.utc)
     pattern = re.compile(r"hrrr\.t(\d{2})z\.wrf(?:sfc|prs|nat)f\d{2}\.grib2")
 
@@ -359,3 +451,96 @@ def resolve_latest_run(model: str = "hrrr") -> tuple[str, int]:
 
     fb = now - timedelta(hours=3)
     return fb.strftime("%Y%m%d"), fb.hour
+
+
+def _scheduled_latest_cycle(model: str) -> tuple[str, int]:
+    """Fallback resolver that snaps non-HRRR models to valid cycle hours."""
+    model_key = model.lower()
+    interval_hours = {
+        "gfs": 6,
+        "ecmwf-open-data": 12,
+        "ecmwf": 12,
+        "ecmwf_ifs": 12,
+        "rrfs-a": 1,
+        "rrfs_a": 1,
+        "wrf-gdex": 1,
+        "wrf_gdex": 1,
+    }.get(model_key, 6)
+    latency_hours = {
+        "gfs": 5,
+        "ecmwf-open-data": 9,
+        "ecmwf": 9,
+        "ecmwf_ifs": 9,
+        "rrfs-a": 2,
+        "rrfs_a": 2,
+        "wrf-gdex": 0,
+        "wrf_gdex": 0,
+    }.get(model_key, 4)
+    available = datetime.now(timezone.utc) - timedelta(hours=latency_hours)
+    cycle = (available.hour // interval_hours) * interval_hours
+    return available.strftime("%Y%m%d"), cycle
+
+
+def resolve_latest_run_for_hours(
+    model: str = "hrrr",
+    *,
+    source: str = "nomads",
+    forecast_hours: list[int] | tuple[int, ...] | None = None,
+    product: str = "sfc",
+    synoptic_only: bool = False,
+    lookback_hours: int = 96,
+) -> tuple[str, int]:
+    """Resolve the newest cycle that actually advertises the requested hours.
+
+    For HRRR requests beyond f018, this automatically searches only the
+    extended 00/06/12/18 UTC cycles, matching the production CA Fire runner.
+    """
+    wanted = sorted({int(hour) for hour in (forecast_hours or [0])})
+    if any(hour < 0 for hour in wanted):
+        raise ValueError(f"forecast_hours must be non-negative, got {wanted}")
+    if model.lower() != "hrrr":
+        return resolve_latest_run(model, source)
+
+    extended_cycles = {0, 6, 12, 18}
+    require_synoptic = synoptic_only or (max(wanted) > 18)
+    now = datetime.now(timezone.utc)
+    errors: list[str] = []
+    saw_availability = False
+    seen: set[tuple[str, int]] = set()
+
+    for hour_offset in range(0, lookback_hours + 1):
+        cycle_time = now - timedelta(hours=hour_offset)
+        cycle = cycle_time.hour
+        if require_synoptic and cycle not in extended_cycles:
+            continue
+        key = (cycle_time.strftime("%Y%m%d"), cycle)
+        if key in seen:
+            continue
+        seen.add(key)
+        date, cycle = key
+        try:
+            available = set(
+                available_forecast_hours(
+                    model,
+                    date,
+                    cycle,
+                    product=product,
+                    source=source,
+                )
+            )
+            saw_availability = True
+        except Exception as exc:
+            errors.append(f"{date} {cycle:02d}Z {product}: {exc}")
+            continue
+        if all(hour in available for hour in wanted):
+            return date, cycle
+
+    if not saw_availability:
+        # Preserve the old behavior if availability listing is unreachable.
+        return resolve_latest_run(model, source)
+
+    raise RuntimeError(
+        "no latest run found with requested forecast hours "
+        f"{wanted} for {model}/{product}/{source}; checked {lookback_hours}h"
+        + (f"; errors: {'; '.join(errors[:4])}" if errors else "")
+    )

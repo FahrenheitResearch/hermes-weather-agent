@@ -54,7 +54,7 @@ weather-mcp --doctor
 
 That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.4` is required for the map, satellite, and point-timeseries Python APIs used here.
 
-`weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and `domain_count: 77`.
+`weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and a nonzero `domain_count`.
 
 ### Optional specialty tools
 
@@ -62,6 +62,7 @@ A small set of tools sit *outside* the agent-v1 contract today and need rustwx w
 
 - `wx_sounding` (skew-T renderer)
 - `wx_cross_section` / `wx_volume_cross_section` (HRRR pressure VolumeStore renderer; all non-smoke wxsection styles)
+- `wx_radar` (NEXRAD Level-II renderer)
 - `wx_ecape_profile` (single-point ECAPE probe)
 - `wx_ecape_grid` (full-grid ECAPE swath research)
 
@@ -116,7 +117,7 @@ weather-mcp --doctor    # binary discovery + product catalog state
 weather-mcp --test      # smoke-test render
 ```
 
-## Tools (32 total)
+## Tools (33 total)
 
 ### Discovery
 | Tool | Purpose |
@@ -127,6 +128,9 @@ weather-mcp --test      # smoke-test render
 | `wx_regions` | rustwx region presets |
 | `wx_doctor` | Local install diagnostics |
 | `wx_latest` | Resolve the latest available run for a model |
+| `wx_data_packs` | HRRR-first local storage tiers: what works without more downloads at 1/5/10/50 GB style budgets |
+
+Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"` and resolve against advertised forecast-hour availability; requests for f019-f048 use the newest HRRR synoptic cycle that actually has those hours, following the CA Fire runner pattern. Local data-pack tiers are cache/retention guidance: rustwx uses `.idx` byte-range fetches wherever the requested fields can be safely subset, while larger tiers simply retain more warmed hours, routes, and artifacts.
 
 ### Direct & derived rendering
 | Tool | Purpose |

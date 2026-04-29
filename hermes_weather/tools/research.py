@@ -23,7 +23,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable
 
 from .. import jobs
 from ..geo import Bbox, bbox_from_center, resolve_location
@@ -324,7 +323,10 @@ def profile_sweep(
             "end_date": end_date,
             "cycles": cyc,
             "forecast_hours": fhs,
-            "points": [{"label": l, "lat": la, "lon": lo} for l, la, lo in points],
+            "points": [
+                {"label": label, "lat": lat, "lon": lon}
+                for label, lat, lon in points
+            ],
             "result_count": len(results),
             "ok_count": sum(1 for r in results if r.get("ok")),
             "fail_count": sum(1 for r in results if not r.get("ok")),

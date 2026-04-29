@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from hermes_weather import jobs
-from hermes_weather.rustwx import discover
+from hermes_weather.rustwx import discover, parse_run, resolve_latest_run_for_hours
 from hermes_weather.tools import (
     cache as cache_tool,
     catalog,
@@ -33,15 +34,21 @@ from hermes_weather.tools import (
     volume_cross_section as volume_cs_tool,
 )
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 # ── Showcase configuration ─────────────────────────────────────────────
 
-# A known cached HRRR run; everything routes through this for warm-cache speed.
-HRRR_RUN = "2026-04-24/22z"
+# Default to live/latest model hours. Set these env vars to pin a reproducible
+# historical run for benchmarks.
+HRRR_RUN = os.environ.get("HERMES_SHOWCASE_HRRR_RUN", "latest")
 HRRR_FHOUR = 0
-GFS_RUN = "2026-04-24/18z"
-ECMWF_RUN = "2026-04-24/12z"
-RRFS_RUN = "2026-04-24/23z"
+GFS_RUN = os.environ.get("HERMES_SHOWCASE_GFS_RUN", "latest")
+ECMWF_RUN = os.environ.get("HERMES_SHOWCASE_ECMWF_RUN", "latest")
+RRFS_RUN = os.environ.get("HERMES_SHOWCASE_RRFS_RUN", "latest")
 
 REGION_PRIMARY = "southern-plains"
 REGION_CONUS = "conus"
@@ -86,6 +93,17 @@ SOCAL_METEOGRAM_VARIABLES = [
 
 SHOWCASE_OUT = Path("outputs/showcase")
 SHOWCASE_OUT.mkdir(parents=True, exist_ok=True)
+
+
+def _hrrr_research_date_cycle(forecast_hour: int = 1) -> tuple[str, int]:
+    if HRRR_RUN == "latest":
+        return resolve_latest_run_for_hours(
+            "hrrr",
+            source="aws",
+            forecast_hours=[forecast_hour],
+            product="sfc",
+        )
+    return parse_run(HRRR_RUN)
 
 
 # ── Bookkeeping ────────────────────────────────────────────────────────
@@ -331,12 +349,14 @@ def run_observations(env):
 
 
 def run_research(env):
+    research_date, research_cycle = _hrrr_research_date_cycle(1)
+    research_date_iso = f"{research_date[:4]}-{research_date[4:6]}-{research_date[6:]}"
     print("\n── Research mode ──────────────────────────────────")
     res = call("research", "stress profile sweep (10 curated points, f1)",
                research_tool.profile_sweep, env,
                mode="stress",
-               start_date="2026-04-24", end_date="2026-04-24",
-               cycles=[22],
+               start_date=research_date_iso, end_date=research_date_iso,
+               cycles=[research_cycle],
                forecast_hours=[1],
                workers=4,
                cache_cap_gb=500.0,
@@ -357,8 +377,8 @@ def run_research(env):
     res = call("research", "mini dataset (1 cycle × 2 derived recipes)",
                ds_tool.build_dataset, env,
                mode="render", model="hrrr",
-               start_date="2026-04-24", end_date="2026-04-24",
-               cycles=[22], forecast_hours=[0],
+               start_date=research_date_iso, end_date=research_date_iso,
+               cycles=[research_cycle], forecast_hours=[0],
                region=REGION_PRIMARY,
                derived_recipes=["sbcape", "mlcape"],
                workers=2, limit=1,

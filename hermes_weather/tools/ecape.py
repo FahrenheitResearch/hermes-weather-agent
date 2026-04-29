@@ -14,12 +14,23 @@ from pathlib import Path
 
 from .. import jobs
 from ..geo import Bbox, bbox_from_center, resolve_location, resolve_to_domain
-from ..rustwx import RustwxEnv, parse_run, render_maps, resolve_latest_run, run
+from ..rustwx import RustwxEnv, parse_run, render_maps, resolve_latest_run_for_hours, run
 
 
-def _resolve_run(run_str: str, model: str = "hrrr") -> tuple[str, int]:
+def _resolve_run(
+    run_str: str,
+    model: str = "hrrr",
+    *,
+    source: str = "aws",
+    forecast_hour: int = 0,
+) -> tuple[str, int]:
     if run_str == "latest":
-        return resolve_latest_run(model)
+        return resolve_latest_run_for_hours(
+            model,
+            source=source,
+            forecast_hours=[forecast_hour],
+            product="sfc",
+        )
     return parse_run(run_str)
 
 
@@ -62,7 +73,7 @@ def profile(
         return {"ok": False, "error": f"could not resolve location {location!r}"}
     lat, lon = latlon
 
-    date, cycle = _resolve_run(run_str, model)
+    date, cycle = _resolve_run(run_str, model, source=source, forecast_hour=forecast_hour)
     out = Path(out_dir) if out_dir else (
         env.out_root / "ecape_profile" /
         f"{date}_{cycle:02d}z_f{forecast_hour:03d}_{lat:.3f}_{lon:.3f}"
@@ -157,7 +168,7 @@ def grid(
             return {"ok": False, "error": "supply either bbox or location"}
         bb = bbox_from_center(*latlon, radius_km=radius_km)
 
-    date, cycle = _resolve_run(run_str, model)
+    date, cycle = _resolve_run(run_str, model, source=source, forecast_hour=forecast_hour)
     out_dir = env.out_root / "ecape_grid" / f"{date}_{cycle:02d}z_f{forecast_hour:03d}_{domain_slug}"
     out_dir.mkdir(parents=True, exist_ok=True)
     output_json = out_dir / f"{domain_slug}.json"
@@ -253,7 +264,7 @@ def ratio_map(
     ]
     if include_native_ratio:
         recipes.append(f"{parcel}_ecape_native_cape_ratio")
-    date, cycle = _resolve_run(run_str, model)
+    date, cycle = _resolve_run(run_str, model, source=source, forecast_hour=forecast_hour)
     domain_slug, computed_bounds = resolve_to_domain(
         env, region=region, domain=domain, location=location
     )

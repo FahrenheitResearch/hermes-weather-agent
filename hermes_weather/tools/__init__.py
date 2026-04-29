@@ -3,6 +3,7 @@ callable that wires the tools into the MCP server.
 
 Module → tool surface:
   catalog          wx_models, wx_recipes, wx_regions
+  data_packs       wx_data_packs
   fetch            wx_fetch
   render           wx_render_recipe, wx_cape, wx_srh, wx_shear, wx_stp
   ecape            wx_ecape_profile, wx_ecape_grid, wx_ecape_ratio_map

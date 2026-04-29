@@ -256,9 +256,12 @@ def _nav(manifest: dict) -> str:
 
 
 def _timing_class(seconds: float) -> str:
-    if seconds < 5: return "fast"
-    if seconds < 60: return ""
-    if seconds < 300: return "slow"
+    if seconds < 5:
+        return "fast"
+    if seconds < 60:
+        return ""
+    if seconds < 300:
+        return "slow"
     return "veryslow"
 
 
@@ -411,6 +414,8 @@ def main() -> int:
         print(f"Missing manifest: {MANIFEST}. Run examples/showcase_full.py first.")
         return 1
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    if IMAGES_DIR.exists():
+        shutil.rmtree(IMAGES_DIR)
 
     body_parts = []
     for sect, calls in manifest["sections"].items():

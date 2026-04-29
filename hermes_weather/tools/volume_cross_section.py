@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import shutil
 import subprocess
 import time
@@ -22,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from ..geo import find_domain_for_string, parse_latlon, resolve_location
-from ..rustwx import RustwxEnv, parse_run, resolve_latest_run
+from ..rustwx import RustwxEnv, parse_run, resolve_latest_run_for_hours
 
 
 VOLUME_PRODUCTS = [
@@ -154,7 +153,17 @@ def volume_cross_section(
             "forecast_hours": hours,
         }
 
-    date, cycle = resolve_latest_run("hrrr") if run_str == "latest" else parse_run(run_str)
+    date, cycle = (
+        resolve_latest_run_for_hours(
+            "hrrr",
+            source=source,
+            forecast_hours=hours,
+            product="prs",
+            synoptic_only=max(hours) > 18,
+        )
+        if run_str == "latest"
+        else parse_run(run_str)
+    )
     route_def = _resolve_route(env, route=route, start=start, end=end)
     if isinstance(route_def, dict):
         return route_def

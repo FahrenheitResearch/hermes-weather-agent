@@ -16,7 +16,7 @@ from pathlib import Path
 import json
 import subprocess
 
-from ..rustwx import RustwxEnv, parse_run, resolve_latest_run
+from ..rustwx import RustwxEnv, parse_run, resolve_latest_run, resolve_latest_run_for_hours
 
 
 def _run_json(env: RustwxEnv, binary: str, args: list[str], *, timeout: int = 60):
@@ -60,7 +60,22 @@ def fetch(
         }
 
     if run == "latest":
-        date, cycle = resolve_latest_run(model)
+        availability_product = {
+            "prs": "prs",
+            "pressure": "prs",
+            "nat": "nat",
+            "native": "nat",
+            "sfc": "sfc",
+            "surface": "sfc",
+            "default": "sfc",
+        }.get((product or "default").lower(), "sfc")
+        date, cycle = resolve_latest_run_for_hours(
+            model,
+            source=source or "nomads",
+            forecast_hours=[forecast_hour],
+            product=availability_product,
+            synoptic_only=forecast_hour > 18,
+        )
     else:
         date, cycle = parse_run(run)
 

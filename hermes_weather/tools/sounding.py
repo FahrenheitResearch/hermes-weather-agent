@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from ..geo import resolve_location
-from ..rustwx import RustwxEnv, parse_run, resolve_latest_run, run
+from ..rustwx import RustwxEnv, parse_run, resolve_latest_run_for_hours, run
 
 
 def sounding(
@@ -48,7 +48,16 @@ def sounding(
         return {"ok": False, "error": f"could not resolve location {location!r}"}
     lat, lon = latlon
 
-    date, cycle = (resolve_latest_run(model) if run_str == "latest" else parse_run(run_str))
+    date, cycle = (
+        resolve_latest_run_for_hours(
+            model,
+            source=source,
+            forecast_hours=[forecast_hour],
+            product="prs",
+        )
+        if run_str == "latest"
+        else parse_run(run_str)
+    )
     out = Path(out_dir) if out_dir else (
         env.out_root / "sounding" /
         f"{date}_{cycle:02d}z_f{forecast_hour:03d}_{lat:.3f}_{lon:.3f}"

@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -26,6 +25,7 @@ from .rustwx import RustwxBinaryMissing, discover
 from .tools import (
     cache as cache_tool,
     catalog,
+    data_packs as data_pack_tool,
     dataset as ds_tool,
     ecape as ecape_tool,
     fetch as fetch_tool,
@@ -103,6 +103,24 @@ def _tool_definitions() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {"model": {"type": "string", "default": "hrrr"}},
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_data_packs",
+            description=(
+                "Describe HRRR-first local data-pack tiers: what works without more downloads "
+                "under 1/5/10/50 GB style budgets, and current cache/output disk usage."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "budget_gb": {
+                        "type": "number",
+                        "description": "Optional local storage budget to select the closest pack.",
+                    },
+                    "include_current_cache": {"type": "boolean", "default": True},
+                },
                 "required": [],
             },
         ),
@@ -740,6 +758,12 @@ def _dispatch(name: str, args: dict) -> dict | list:
 
     if name == "wx_latest":
         return fetch_tool.latest(ENV, model=args.get("model", "hrrr"))
+    if name == "wx_data_packs":
+        return data_pack_tool.data_packs(
+            ENV,
+            budget_gb=args.get("budget_gb"),
+            include_current_cache=bool(args.get("include_current_cache", True)),
+        )
     if name == "wx_fetch":
         return fetch_tool.fetch(ENV, **_with_run(args))
 
@@ -850,8 +874,6 @@ def _print_doctor() -> None:
 def _smoke_test() -> int:
     """Render one MLECAPE map for southern-plains as a sanity check."""
     print("Smoke test: rendering MLECAPE for southern-plains...")
-    from datetime import datetime, timezone
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = render_tool.cape(
         ENV, parcel="ml", region="southern-plains",
         run_str="latest", forecast_hour=0,
@@ -862,9 +884,11 @@ def _smoke_test() -> int:
 
 def run_cli() -> int:
     if "--list" in sys.argv:
-        _print_tool_list(); return 0
+        _print_tool_list()
+        return 0
     if "--doctor" in sys.argv:
-        _print_doctor(); return 0
+        _print_doctor()
+        return 0
     if "--test" in sys.argv:
         return _smoke_test()
     asyncio.run(_serve())
