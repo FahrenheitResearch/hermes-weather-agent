@@ -1,4 +1,4 @@
-"""Catalog tools — live from `rustwx.agent_capabilities_json()`.
+﻿"""Catalog tools â€” live from `rustwx.agent_capabilities_json()`.
 
 The rustwx Python module is the source of truth: models, recipes
 (direct / light_derived / heavy_derived / windowed), domains, request
@@ -6,7 +6,7 @@ schema. This module exposes thin filtered views suitable for an agent
 to consume without re-reading the full capabilities JSON.
 
 If `import rustwx` isn't installed, all functions degrade with a clear
-"install rustwx>=0.4.6" error rather than crashing the MCP server.
+"install rustwx>=0.5.0" error rather than crashing the MCP server.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from ..rustwx import RustwxEnv, list_domains as _list_domains
 from .volume_cross_section import ROUTES as VOLUME_CROSS_SECTION_ROUTES_BY_ID
 from .volume_cross_section import VOLUME_PRODUCTS as VOLUME_CROSS_SECTION_PRODUCTS
 
-# Cross-section product palette — kept in code because the cross-section
+# Cross-section product palette â€” kept in code because the cross-section
 # render path isn't part of agent-v1 yet.
 CROSS_SECTION_PRODUCTS = VOLUME_CROSS_SECTION_PRODUCTS
 CROSS_SECTION_ROUTES = sorted(VOLUME_CROSS_SECTION_ROUTES_BY_ID)
@@ -33,7 +33,7 @@ def _model_entry(caps: dict, model_id: str) -> dict | None:
     return None
 
 
-# ── Public catalog tools ────────────────────────────────────────────────
+# â”€â”€ Public catalog tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def models(env: RustwxEnv) -> dict:
@@ -106,7 +106,7 @@ def products(
 ) -> dict:
     """Return product slugs filtered by kind / model / substring search.
 
-    `kind` ∈ {direct, derived, light_derived, heavy_derived, windowed}.
+    `kind` âˆˆ {direct, derived, light_derived, heavy_derived, windowed}.
     'derived' (without prefix) returns light + heavy together.
     """
     caps = _require_caps(env)
@@ -152,7 +152,7 @@ def regions(env: RustwxEnv) -> dict:
 
 def domains(env: RustwxEnv, *, kind: str | None = None,
             limit: int | None = None) -> dict:
-    """Return all rustwx domains. kind ∈ {country, region, metro, watch_area}."""
+    """Return all rustwx domains. kind âˆˆ {country, region, metro, watch_area}."""
     return _list_domains(env, kind=kind, limit=limit)
 
 
@@ -171,7 +171,7 @@ def doctor(env: RustwxEnv) -> dict:
         info["domain_count"] = caps.get("domains", {}).get("count")
     else:
         info["error"] = (
-            "rustwx Python module not found. Run: pip install 'rustwx>=0.4.6'"
+            "rustwx Python module not found. Run: pip install 'rustwx>=0.5.0'"
         )
 
     info["optional_binaries"] = {
@@ -195,7 +195,7 @@ def doctor(env: RustwxEnv) -> dict:
         info["advice"] = (
             "Map rendering (direct/derived/heavy ECAPE/windowed) is fully "
             "available via the rustwx agent-v1 API. Satellite and point "
-            "meteogram calls require rustwx>=0.4.6. Specialty tools "
+            "meteogram calls require rustwx>=0.5.0. Specialty tools "
             "(sounding, VolumeStore cross sections, radar export, "
             "ECAPE profile probe, ECAPE grid research) require the "
             "corresponding optional binaries built from the rustwx workspace; "
@@ -203,7 +203,7 @@ def doctor(env: RustwxEnv) -> dict:
             "and set HERMES_RUSTWX_BIN_DIR."
         )
     else:
-        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.4.6'"
+        info["advice"] = "Install the rustwx Python module: pip install 'rustwx>=0.5.0'"
     return info
 
 
@@ -211,5 +211,5 @@ def _module_error() -> dict:
     return {
         "ok": False,
         "error": "rustwx Python module not installed",
-        "fix": "pip install 'rustwx>=0.4.6'",
+        "fix": "pip install 'rustwx>=0.5.0'",
     }

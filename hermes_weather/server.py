@@ -55,12 +55,88 @@ def _tool_definitions() -> list[Tool]:
         "description": "Model run as 'YYYY-MM-DD/HHz' or 'latest'.",
         "default": "latest",
     }
-    fhour_schema: dict = {"type": "integer", "default": 0, "minimum": 0, "maximum": 384}
+    fhour_schema: dict = {
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 43824,
+        "description": "Forecast hour. AIFS local Earth2 archives may contain multi-year leads; 43824 is roughly five years.",
+    }
+    ensemble_schema: dict = {
+        "type": "object",
+        "description": "AIFS/Earth2 ensemble selector for direct-map products.",
+        "properties": {
+            "selector": {"type": "string", "enum": ["member", "stat"]},
+            "member_index": {"type": "integer", "minimum": 0},
+            "stat": {"type": "string", "enum": ["mean", "std", "min", "max", "p10", "p50", "p90"]},
+        },
+        "required": ["selector"],
+    }
+    grid_overlay_schema: dict = {
+        "type": "object",
+        "description": "Spaced grid overlay: scalar values, EBS shortcut, or hodograph glyphs.",
+        "properties": {
+            "kind": {"type": "string", "enum": ["value", "derived_value", "ebs", "hodo"]},
+            "recipe": {"type": "string", "description": "Direct or derived recipe slug used by value/derived_value/ebs."},
+            "wind_recipes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Wind-bearing direct recipes for hodo glyphs, e.g. 10m/850/700/500 mb winds.",
+            },
+            "stride_x": {"type": "integer", "minimum": 1},
+            "stride_y": {"type": "integer", "minimum": 1},
+            "label_format": {"type": "string"},
+            "color": {"type": "string"},
+        },
+        "required": ["kind"],
+    }
+    composite_schema: dict = {
+        "type": "object",
+        "description": "Custom composite map: gradient fill plus optional isopleths/contours, wind, and grid overlays.",
+        "properties": {
+            "slug": {"type": "string"},
+            "title": {"type": "string"},
+            "fill_recipe": {"type": "string", "description": "Direct recipe used as the filled/gradient field."},
+            "contour_recipe": {"type": "string", "description": "Direct recipe used for isopleths/contours."},
+            "contour_levels": {"type": "array", "items": {"type": "number"}},
+            "contour_color": {"type": "string"},
+            "wind_recipe": {"type": "string", "description": "Direct recipe used for companion wind barbs/streamlines."},
+            "grid_overlays": {"type": "array", "items": grid_overlay_schema},
+        },
+        "required": ["slug"],
+    }
+    common_render_props: dict = {
+        "model": {"type": "string", "default": "hrrr"},
+        "run": run_schema,
+        "forecast_hour": fhour_schema,
+        "region": {"type": "string"},
+        "domain": {"type": "string", "description": "rustwx built-in domain slug; overrides region."},
+        "location": location_schema,
+        "bounds": {
+            "type": "array",
+            "items": {"type": "number"},
+            "description": "Custom [west,east,south,north] bounds; overrides region/domain when supplied.",
+        },
+        "source": {"type": "string", "default": "aws"},
+        "place_label_density": {
+            "type": "string",
+            "default": "major",
+            "enum": ["none", "major", "major-and-aux", "dense"],
+        },
+        "out_dir": {"type": "string"},
+        "output_width": {"type": "integer", "minimum": 320},
+        "output_height": {"type": "integer", "minimum": 240},
+        "use_cache": {"type": "boolean"},
+        "no_cache": {"type": "boolean"},
+    }
 
     return [
         Tool(
             name="wx_models",
-            description="List available weather models (HRRR, GFS, ECMWF Open Data, RRFS-A, WRF-GDEX) with sources, products, and forecast horizons.",
+            description=(
+                "List available weather models including HRRR/HRRR-AK, GFS/GDAS/GEFS, AIGFS/AIGEFS, "
+                "RAP, NAM, HIRESW, SREF, NBM, RTMA/URMA, RRFS-A, ECMWF Open Data, WRF-GDEX, and local AIFS/Earth2 archives."
+            ),
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         Tool(
@@ -163,37 +239,59 @@ def _tool_definitions() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
+                    **common_render_props,
                     "recipes": {"type": "array", "items": {"type": "string"}},
-                    "model": {"type": "string", "default": "hrrr"},
-                    "run": run_schema,
-                    "forecast_hour": fhour_schema,
-                    "region": {"type": "string"},
-                    "location": location_schema,
-                    "source": {"type": "string", "default": "aws"},
-                    "place_label_density": {"type": "string", "default": "major",
-                                              "enum": ["none", "major", "major-and-aux", "dense"]},
+                    "direct_recipes": {"type": "array", "items": {"type": "string"}},
+                    "derived_recipes": {"type": "array", "items": {"type": "string"}},
+                    "windowed_products": {"type": "array", "items": {"type": "string"}},
+                    "composites": {"type": "array", "items": composite_schema},
+                    "grid_overlays": {"type": "array", "items": grid_overlay_schema},
+                    "ensemble": ensemble_schema,
                     "contour_mode": {"type": "string", "default": "automatic"},
                     "allow_large_heavy_domain": {"type": "boolean", "default": False},
                 },
-                "required": ["recipes"],
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_composite",
+            description=(
+                "Render built-in composite/isopleth recipes, or submit experimental custom composite specs. "
+                "Use built-ins such as mslp_10m_winds, 500mb_height_winds, cloud_cover_levels, "
+                "precipitation_type, and composite_reflectivity_uh for gradient fills plus isopleths/contours. "
+                "Custom JSON composites/grid overlays are schema-stable for agents, but rustwx v0.5 returns a "
+                "clear unsupported error until the generic renderer lands."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    **common_render_props,
+                    "recipes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Built-in rustwx recipes that already combine filled fields, isopleths/contours, and winds.",
+                    },
+                    "composites": {"type": "array", "items": composite_schema},
+                    "grid_overlays": {"type": "array", "items": grid_overlay_schema},
+                    "ensemble": ensemble_schema,
+                    "allow_large_heavy_domain": {"type": "boolean", "default": False},
+                },
+                "required": [],
             },
         ),
         Tool(
             name="wx_windowed",
             description=(
                 "Render time-window products: qpf_1h, qpf_6h, qpf_12h, qpf_24h, qpf_total, "
-                "uh_2to5km_1h_max, uh_2to5km_3h_max, uh_2to5km_run_max. HRRR-only (uses "
-                "hrrr_windowed_batch). Set forecast_hour to the last hour of the window."
+                "uh_2to5km_1h_max, uh_2to5km_3h_max, uh_2to5km_run_max. HRRR supports the full "
+                "family; rustwx 0.5 also validates qpf_total across the easy indexed-GRIB model group. "
+                "Set forecast_hour to the last hour of the window."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    **common_render_props,
                     "products": {"type": "array", "items": {"type": "string"}},
-                    "model": {"type": "string", "default": "hrrr"},
-                    "run": run_schema,
-                    "forecast_hour": {"type": "integer", "default": 6},
-                    "region": {"type": "string"}, "location": location_schema,
-                    "source": {"type": "string", "default": "aws"},
                 },
                 "required": ["products"],
             },
@@ -769,6 +867,8 @@ def _dispatch(name: str, args: dict) -> dict | list:
 
     if name == "wx_render_recipe":
         return render_tool.render_recipe(ENV, **_with_run(args, key="run_str"))
+    if name == "wx_composite":
+        return render_tool.composite(ENV, **_with_run(args, key="run_str"))
     if name == "wx_windowed":
         return render_tool.windowed(ENV, **_with_run(args, key="run_str"))
     if name == "wx_severe_panel":

@@ -1,4 +1,4 @@
-"""ECAPE specialty tools.
+﻿"""ECAPE specialty tools.
 
 In rustwx 0.4 the agent-v1 contract handles every ECAPE map (sbecape,
 mlecape, muecape, ratios, ECAPE-EHI, ECAPE-STP, ECAPE-SCP) through
@@ -34,7 +34,7 @@ def _resolve_run(
     return parse_run(run_str)
 
 
-# ── Single-point ECAPE profile probe (optional binary) ──────────────────
+# â”€â”€ Single-point ECAPE profile probe (optional binary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def profile(
@@ -122,7 +122,7 @@ def profile(
     return payload
 
 
-# ── Swath-scale grid research (optional binary) ─────────────────────────
+# â”€â”€ Swath-scale grid research (optional binary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def grid(
@@ -142,7 +142,7 @@ def grid(
     """Full-grid ECAPE statistics over a swath.
 
     Uses the optional `hrrr_ecape_grid_research` binary. Background by
-    default — poll wx_job_status with the returned job_id.
+    default â€” poll wx_job_status with the returned job_id.
     """
     binary = "hrrr_ecape_grid_research"
     if not env.has_binary(binary):
@@ -223,7 +223,7 @@ def grid(
     }
 
 
-# ── Ratio map — now goes through agent-v1 render_maps_json ──────────────
+# â”€â”€ Ratio map â€” now goes through agent-v1 render_maps_json â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def ratio_map(
@@ -242,7 +242,7 @@ def ratio_map(
     out_dir: str | None = None,
     timeout: int = 1800,
 ) -> dict:
-    """ECAPE/CAPE ratio render — routes through render_maps_json now.
+    """ECAPE/CAPE ratio render â€” routes through render_maps_json now.
 
     By default emits the ECAPE map plus the derived-CAPE ratio variant.
     Native-CAPE ratios are opt-in because not every rustwx build exposes
@@ -251,7 +251,7 @@ def ratio_map(
     if not env.module_available:
         return {
             "ok": False,
-            "error": "rustwx Python module not installed; run: pip install 'rustwx>=0.4.6'",
+            "error": "rustwx Python module not installed; run: pip install 'rustwx>=0.5.0'",
         }
     parcel = parcel.lower()
     if parcel not in ("sb", "ml", "mu"):

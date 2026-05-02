@@ -1,4 +1,4 @@
-# Hermes Weather Agent
+﻿# Hermes Weather Agent
 
 **A standalone Weather MCP server powered by rustwx.**
 
@@ -11,7 +11,9 @@ The compute and rendering live in `rustwx`. PNG output goes through the pure-Rus
 * **One MCP server for weather work.** Agents can request maps, satellite, radar, meteograms, soundings, cross sections, cache status, and background jobs without a custom web app.
 * **Latest data by default.** HRRR requests resolve against advertised forecast-hour availability; longer-range HRRR requests use the newest synoptic cycle with the requested hours.
 * **Efficient local data use.** rustwx uses `.idx` byte-range fetches where possible, and Hermes exposes data-pack guidance so users can choose how much disk to reserve.
-* **Live product discovery.** 100+ products with status/maturity/runner/per-model support metadata are queried from `rustwx product_catalog`; the agent can pick products the model actually supports.
+* **Live product discovery.** 1000+ product/model combinations with status/maturity/runner/per-model support metadata are queried from `rustwx product_catalog`; the agent can pick products the model actually supports.
+* **rustwx 0.5 model compatibility.** Hermes now understands the broadened rustwx model set: HRRR/HRRR-AK, GFS/GDAS/GEFS, AIGFS/AIGEFS, RAP, NAM, HIRESW, SREF, NBM, RTMA/URMA, RRFS-A, ECMWF Open Data, WRF-GDEX, and local AIFS/Earth2 NetCDF archives.
+* **Composite and grid-plot vocabulary.** Agents can ask for built-in fill-plus-isopleth recipes, contour labels, ensemble member/stat selectors, and schema-stable grid-overlay requests such as value grids, EBS-style scalar grids, and hodograph glyph grids. Generic custom grid overlays are reserved in the schema and return a clear rustwx error until the generic renderer lands.
 * **Advanced severe-weather research when needed.** ECAPE maps, profile probes, profile sweeps, ratio maps, and severe panels are available as regular tools, not as a separate research-only app.
 
 ## What an agent can do with this
@@ -49,7 +51,7 @@ pip install -U rustwx hermes-weather-agent
 weather-mcp --doctor
 ```
 
-That's it for every map-rendering tool — the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.4.6` is recommended for the current public release.
+That's it for every map-rendering tool â€” the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.5.0` is recommended for the current public release.
 
 `weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and a nonzero `domain_count`.
 
@@ -84,7 +86,7 @@ These will fold into the agent-v1 contract in a future rustwx release; until the
 ## Configure
 
 ```yaml
-# Hermes Agent — ~/.hermes/config.yaml
+# Hermes Agent â€” ~/.hermes/config.yaml
 mcp_servers:
   weather:
     command: weather-mcp
@@ -95,7 +97,7 @@ mcp_servers:
 ```
 
 ```json
-// Claude Desktop / generic MCP — claude_desktop_config.json
+// Claude Desktop / generic MCP â€” claude_desktop_config.json
 {
   "mcpServers": {
     "weather": {
@@ -114,13 +116,13 @@ weather-mcp --doctor    # binary discovery + product catalog state
 weather-mcp --test      # smoke-test render
 ```
 
-## Tools (33 total)
+## Tools (34 total)
 
 ### Discovery
 | Tool | Purpose |
 |---|---|
 | `wx_models` | Available models, sources, products, forecast horizons |
-| `wx_products` | **Live product catalog** — 100+ entries with status/maturity/runners/per-model support |
+| `wx_products` | **Live product catalog** â€” 1000+ product/model entries with status/maturity/runners/per-model support |
 | `wx_recipes` | Compact recipe summary (live with fallback mirror) |
 | `wx_regions` | rustwx region presets |
 | `wx_doctor` | Local install diagnostics |
@@ -133,18 +135,19 @@ Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"`
 | Tool | Purpose |
 |---|---|
 | `wx_render_recipe` | Render any combination of direct / derived / windowed / heavy recipes (auto-routes to the right binary) |
+| `wx_composite` | Built-in composite/isopleth recipe helper plus schema-stable custom composite/grid-overlay requests |
 | `wx_cape` | SBCAPE / MLCAPE / MUCAPE shortcut |
 | `wx_ecape` | First-class ECAPE map (sbecape / mlecape / muecape) |
 | `wx_srh` | 0-1 km or 0-3 km SRH |
 | `wx_shear` | 0-1 km or 0-6 km bulk shear |
 | `wx_stp` | Fixed-layer Significant Tornado Parameter |
-| `wx_windowed` | Time-window products: QPF (1/6/12/24h, total) and 2-5 km UH (1h/3h/run-max) |
+| `wx_windowed` | Time-window products: full HRRR QPF/UH/surface-extrema family, plus cross-model `qpf_total` for validated v0.5 indexed-GRIB models |
 | `wx_severe_panel` | Multi-product severe + ECAPE plate from one shared heavy thermo load |
 
 ### ECAPE specialists
 | Tool | Purpose |
 |---|---|
-| `wx_ecape_profile` | Per-profile ECAPE diagnostics at a (lat, lon) — sub-millisecond Rust solver |
+| `wx_ecape_profile` | Per-profile ECAPE diagnostics at a (lat, lon) â€” sub-millisecond Rust solver |
 | `wx_ecape_grid` | Full-grid ECAPE research over a swath (background) |
 | `wx_ecape_ratio_map` | MLECAPE filled + ECAPE/CAPE ratio contours w/ magnitude mask |
 
@@ -162,7 +165,7 @@ Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"`
 ### Research mode
 | Tool | Purpose |
 |---|---|
-| `wx_research_profile_sweep` | Multi-point ECAPE sweep across (point × date × cycle × fhour). Modes: `targets` / `random` / `stress`. Aggregated CSV with timing breakdown |
+| `wx_research_profile_sweep` | Multi-point ECAPE sweep across (point Ã— date Ã— cycle Ã— fhour). Modes: `targets` / `random` / `stress`. Aggregated CSV with timing breakdown |
 | `wx_build_dataset` | Multi-day batch renders or profile probes (background) |
 
 ### Cache & jobs
@@ -186,19 +189,19 @@ The showcase includes HRRR VolumeStore cross sections, the GOES18 product set, d
 Top wall-time consumers from the canonical run:
 
 ```
-42.7 s  HRRR derived  — 44 recipes / one shared decode    72 PNGs
+42.7 s  HRRR derived  â€” 44 recipes / one shared decode    72 PNGs
 41.3 s  HRRR severe panel (heavy_panel_hour)              24 PNGs
 35.1 s  ECAPE/CAPE ratio display (background)              6 PNGs
- 8.0 s  mini research dataset (1 cycle × 2 recipes)
- 7.9 s  HRRR windowed — 8 QPF/UH products                  6 PNGs
- 6.6 s  HRRR direct — 52 recipes / one shared decode      72 PNGs
+ 8.0 s  mini research dataset (1 cycle Ã— 2 recipes)
+ 7.9 s  HRRR windowed â€” 8 QPF/UH products                  6 PNGs
+ 6.6 s  HRRR direct â€” 52 recipes / one shared decode      72 PNGs
  6.6 s  ECAPE grid research (background)
  5.9 s  stress profile sweep (10 curated points)
  5.1 s  GFS derived (sbcape/mucape/lapse)                  6 PNGs
- 4.7 s ×5  cross sections (4 routes + 1 city pair)
+ 4.7 s Ã—5  cross sections (4 routes + 1 city pair)
 ```
 
-The HRRR direct + derived passes each render dozens of products from one shared thermodynamic decode — that's where the per-product cost approaches zero.
+The HRRR direct + derived passes each render dozens of products from one shared thermodynamic decode â€” that's where the per-product cost approaches zero.
 
 ## Programmatic use (without an LLM)
 
@@ -248,8 +251,8 @@ for p in products["products"]:
 
 | Operation | Python (`ecape-parcel` + MetPy) | Rust (`rustwx-calc`) | Speedup |
 |---|---|---|---|
-| ECAPE per HRRR profile (one parcel/config) | 2.8–6.1 s | 0.45–0.65 ms | **5,600–13,000×** |
-| ECAPE full-grid (272,955 HRRR cells / forecast hour) | impractical | 17.6–18.4 s | — |
+| ECAPE per HRRR profile (one parcel/config) | 2.8â€“6.1 s | 0.45â€“0.65 ms | **5,600â€“13,000Ã—** |
+| ECAPE full-grid (272,955 HRRR cells / forecast hour) | impractical | 17.6â€“18.4 s | â€” |
 
 Per-profile ECAPE is essentially free; full-grid is the heavy one. Heavy tools (`wx_ecape_grid`, `wx_ecape_ratio_map` for CONUS, `wx_research_profile_sweep` over many cycles) run as background jobs. Profile-sweep results separate `raw_fetch_s` / `profile_extract_s` / `parcel_solver_s` / `render_s` so you can attribute time honestly.
 

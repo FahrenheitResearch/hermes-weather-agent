@@ -73,7 +73,13 @@ def _resolve_domain(
 def render_recipe(
     env: RustwxEnv,
     *,
-    recipes: list[str],
+    recipes: list[str] | None = None,
+    direct_recipes: list[str] | None = None,
+    derived_recipes: list[str] | None = None,
+    windowed_products: list[str] | None = None,
+    composites: list[dict] | None = None,
+    grid_overlays: list[dict] | None = None,
+    ensemble: dict | None = None,
     model: str = "hrrr",
     run_str: str = "latest",
     forecast_hour: int = 0,
@@ -83,6 +89,10 @@ def render_recipe(
     bounds: list[float] | None = None,
     source: str = "aws",
     place_label_density: str = "major",
+    output_width: int | None = None,
+    output_height: int | None = None,
+    use_cache: bool | None = None,
+    no_cache: bool | None = None,
     out_dir: str | None = None,
     timeout: int = 900,
 ) -> dict:
@@ -97,11 +107,23 @@ def render_recipe(
         return {
             "ok": False,
             "error": (
-                "rustwx Python module not installed. Run: pip install 'rustwx>=0.4.6'"
+                "rustwx Python module not installed. Run: pip install 'rustwx>=0.5.0'"
             ),
         }
-    if not recipes:
-        return {"ok": False, "error": "recipes is empty"}
+    recipes = list(recipes or [])
+    direct_recipes = list(direct_recipes or [])
+    derived_recipes = list(derived_recipes or [])
+    windowed_products = list(windowed_products or [])
+    composites = list(composites or [])
+    grid_overlays = list(grid_overlays or [])
+    if not any([recipes, direct_recipes, derived_recipes, windowed_products, composites, grid_overlays]):
+        return {
+            "ok": False,
+            "error": (
+                "no render target supplied: provide recipes, direct_recipes, "
+                "derived_recipes, windowed_products, composites, or grid_overlays"
+            ),
+        }
 
     date, cycle = _resolve_run(
         run_str,
@@ -122,10 +144,31 @@ def render_recipe(
         "forecast_hour": forecast_hour,
         "model": model,
         "source": source,
-        "products": list(recipes),
         "out_dir": str(out_root.resolve()).replace("\\", "/"),
         "place_label_density": place_label_density,
     }
+    if recipes:
+        request["products"] = recipes
+    if direct_recipes:
+        request["direct_recipes"] = direct_recipes
+    if derived_recipes:
+        request["derived_recipes"] = derived_recipes
+    if windowed_products:
+        request["windowed_products"] = windowed_products
+    if composites:
+        request["composites"] = composites
+    if grid_overlays:
+        request["grid_overlays"] = grid_overlays
+    if ensemble:
+        request["ensemble"] = dict(ensemble)
+    if output_width is not None:
+        request["output_width"] = int(output_width)
+    if output_height is not None:
+        request["output_height"] = int(output_height)
+    if use_cache is not None:
+        request["use_cache"] = bool(use_cache)
+    if no_cache is not None:
+        request["no_cache"] = bool(no_cache)
     if bounds:
         request["bounds"] = list(bounds)
     elif domain_slug:
@@ -226,10 +269,40 @@ def stp(env: RustwxEnv, **kwargs) -> dict:
 
 
 def windowed(env: RustwxEnv, *, products: list[str], forecast_hour: int = 6, **kwargs) -> dict:
-    """QPF / UH window products go through the same render_maps_json call."""
+    """Window products go through the same render_maps_json call.
+
+    HRRR supports the full QPF/UH/surface-extrema family. In rustwx 0.5,
+    qpf_total is also validated through the cross-model indexed-GRIB path for
+    the easy operational model group.
+    """
     if not products:
         return {"ok": False, "error": "products list is empty"}
-    return render_recipe(env, recipes=products, forecast_hour=forecast_hour, **kwargs)
+    return render_recipe(env, windowed_products=products, forecast_hour=forecast_hour, **kwargs)
+
+
+def composite(
+    env: RustwxEnv,
+    *,
+    composites: list[dict] | None = None,
+    recipes: list[str] | None = None,
+    grid_overlays: list[dict] | None = None,
+    **kwargs,
+) -> dict:
+    """Render custom composite/isopleth/grid-overlay maps.
+
+    `composites` is passed through to rustwx.render_maps_json. Each entry can
+    define a fill recipe, optional contour/isopleth recipe, optional wind
+    recipe, contour levels/color, and per-composite grid overlays.
+    """
+    if not composites and not recipes:
+        return {"ok": False, "error": "provide built-in composite recipes or custom composites"}
+    return render_recipe(
+        env,
+        recipes=recipes or [],
+        composites=composites,
+        grid_overlays=grid_overlays or [],
+        **kwargs,
+    )
 
 
 def severe_panel(env: RustwxEnv, **kwargs) -> dict:

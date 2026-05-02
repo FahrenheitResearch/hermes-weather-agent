@@ -1,15 +1,15 @@
-"""rustwx integration layer.
+﻿"""rustwx integration layer.
 
 The plugin's primary path is the rustwx Python API (agent-v1 contract):
 
-    pip install rustwx>=0.4.6
+    pip install rustwx>=0.5.0
     import rustwx
     rustwx.agent_capabilities_json()
     rustwx.list_domains_json()
     rustwx.render_maps_json(request_json)
 
-That covers all map rendering — direct, light derived, heavy ECAPE, and
-HRRR windowed products — with no Rust toolchain on the user's machine.
+That covers all map rendering â€” direct, light derived, heavy ECAPE, and
+HRRR windowed products â€” with no Rust toolchain on the user's machine.
 
 A handful of specialty paths (sounding, cross sections, single-point
 ECAPE profile probe, full-grid ECAPE research swath, radar export) aren't in the
@@ -61,7 +61,7 @@ class RustwxEnv:
     """Resolved Python module + optional binary paths + cache/output roots.
 
     `module_available` and `module_version` describe the rustwx PyPI
-    package state — that's the primary path for maps. `binaries` lists
+    package state â€” that's the primary path for maps. `binaries` lists
     any optional proof binaries on disk for the specialty paths.
     """
     module_available: bool
@@ -101,7 +101,7 @@ class RustwxBinaryMissing(RuntimeError):
         super().__init__(msg)
 
 
-# ── Module discovery ────────────────────────────────────────────────────
+# â”€â”€ Module discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _probe_module() -> tuple[bool, str | None, dict | None]:
@@ -129,7 +129,7 @@ def _probe_module() -> tuple[bool, str | None, dict | None]:
 
 
 def _candidate_dirs() -> list[Path]:
-    """Search order for optional binaries: env var → common locations."""
+    """Search order for optional binaries: env var â†’ common locations."""
     out: list[Path] = []
     env_dir = os.environ.get("HERMES_RUSTWX_BIN_DIR")
     if env_dir:
@@ -141,7 +141,7 @@ def _candidate_dirs() -> list[Path]:
 def discover() -> RustwxEnv:
     """Locate rustwx Python module + any optional binaries.
 
-    Always succeeds — check `.module_available` to decide whether agent-v1
+    Always succeeds â€” check `.module_available` to decide whether agent-v1
     paths are usable, and `.has_binary(name)` for specialty paths.
     """
     module_available, module_version, capabilities = _probe_module()
@@ -186,7 +186,7 @@ def discover() -> RustwxEnv:
     )
 
 
-# ── Agent-v1 wrappers ──────────────────────────────────────────────────
+# â”€â”€ Agent-v1 wrappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def render_maps(env: RustwxEnv, request: dict) -> dict:
@@ -198,7 +198,7 @@ def render_maps(env: RustwxEnv, request: dict) -> dict:
     if not env.module_available:
         raise RuntimeError(
             "rustwx Python module not installed. Install with: "
-            "pip install 'rustwx>=0.4.6'"
+            "pip install 'rustwx>=0.5.0'"
         )
     import rustwx
     payload = json.dumps(request, default=str)
@@ -227,7 +227,7 @@ def render_sounding_column(env: RustwxEnv, column: dict, output_path: str | Path
     return json.loads(result) if result else {"output_path": str(output_path)}
 
 
-# ── Optional binary subprocess (specialty paths) ───────────────────────
+# â”€â”€ Optional binary subprocess (specialty paths) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @dataclass
@@ -301,7 +301,7 @@ def run(
     )
 
 
-# ── Run-string helpers ─────────────────────────────────────────────────
+# â”€â”€ Run-string helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def parse_run(run_str: str) -> tuple[str, int]:
@@ -399,7 +399,7 @@ def _available_hrrr_nomads_hours(date_yyyymmdd: str, cycle_utc: int, product: st
 def resolve_latest_run(model: str = "hrrr", source: str = "nomads") -> tuple[str, int]:
     """Resolve 'latest' by probing NOMADS HRRR directory.
 
-    rustwx provides latest_run_json() too — when stable for all models
+    rustwx provides latest_run_json() too â€” when stable for all models
     we'll route through that instead.
     """
     import re
