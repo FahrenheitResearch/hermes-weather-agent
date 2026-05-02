@@ -59,8 +59,8 @@ def _tool_definitions() -> list[Tool]:
         "type": "integer",
         "default": 0,
         "minimum": 0,
-        "maximum": 43824,
-        "description": "Forecast hour. AIFS local Earth2 archives may contain multi-year leads; 43824 is roughly five years.",
+        "maximum": 43848,
+        "description": "Forecast hour. AIFS local Earth2 archives may contain multi-year leads; 43848 is roughly five years.",
     }
     ensemble_schema: dict = {
         "type": "object",
