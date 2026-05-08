@@ -232,7 +232,7 @@ def _tool_definitions() -> list[Tool]:
                 "Examples: direct → mslp_10m_winds, 2m_temperature, 500mb_height_winds, total_qpf; "
                 "derived → sbcape, mlcape, mucape, sbecape, mlecape, muecape, "
                 "ml_ecape_derived_cape_ratio, ecape_ehi_0_3km, ecape_stp, srh_0_1km, srh_0_3km, "
-                "bulk_shear_0_6km, stp_fixed, lapse_rate_700_500; "
+                "bulk_shear_0_6km, dcape, stp_fixed, lapse_rate_700_500; "
                 "windowed → qpf_1h, qpf_6h, qpf_total, uh_2to5km_3h_max; "
                 "heavy → severe_proof_panel. "
                 "Region resolves from `region` (preset) or `location` (city/lat-lon nearest preset)."

@@ -27,6 +27,7 @@ The compute and rendering live in `rustwx`. PNG output goes through the pure-Rus
 "What does the latest CONUS QPF look like at f24?"
 
 "Render MLECAPE and 0-3 km SRH over the southern plains for the latest HRRR."
+"Render HRRR DCAPE over Oklahoma City."
 "Probe the ECAPE profile at Norman, OK at the latest f01."
 "Build a 7-day dataset of MLECAPE / SRH 0-3 / STP renders for southern-plains."
 "What's currently in the cache, and what would a 400 GB eviction free?"
@@ -36,7 +37,7 @@ The compute and rendering live in `rustwx`. PNG output goes through the pure-Rus
 
 The general weather tools are the main surface area. On top of that, Hermes Weather Agent includes ECAPE and severe-weather research tools for deeper work:
 
-* full-parcel ECAPE maps at HRRR-grid scale
+* full-parcel ECAPE and DCAPE maps at HRRR-grid scale
 * per-profile ECAPE diagnostics from the Rust solver
 * random/target/stress profile sweeps
 * severe-weather panels and ECAPE/CAPE ratio products
@@ -51,7 +52,7 @@ pip install -U rustwx hermes-weather-agent
 weather-mcp --doctor
 ```
 
-That's it for every map-rendering tool â€” the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.5.0` is recommended for the current public release.
+That's it for every map-rendering tool â€” the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.5.2` is recommended for the current public release.
 
 `weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and a nonzero `domain_count`.
 
