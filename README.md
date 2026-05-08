@@ -62,6 +62,8 @@ A small set of tools sit *outside* the agent-v1 contract today and need rustwx w
 - `wx_sounding` (skew-T renderer)
 - `wx_cross_section` / `wx_volume_cross_section` (HRRR pressure VolumeStore renderer; all non-smoke wxsection styles)
 - `wx_radar` (NEXRAD Level-II renderer)
+- `wx_native_dataset_plan` / `wx_native_dataset_run` (Rust-native HRRR/GOES/MRMS/Level-II training-data plans and shards)
+- `wx_native_obs_preview` (quicklook PNGs from local GOES, MRMS, or Level-II files)
 - `wx_ecape_profile` (single-point ECAPE probe)
 - `wx_ecape_grid` (full-grid ECAPE swath research)
 
@@ -75,6 +77,9 @@ cargo build -p rustwx-cli --release \
   --bin hrrr_pressure_volume_store \
   --bin volume_store_cross_section_render \
   --bin radar_export \
+  --bin native_dataset_plan \
+  --bin native_dataset_runner \
+  --bin native_obs_preview \
   --bin hrrr_ecape_profile_probe \
   --bin hrrr_ecape_grid_research
 
@@ -116,7 +121,7 @@ weather-mcp --doctor    # binary discovery + product catalog state
 weather-mcp --test      # smoke-test render
 ```
 
-## Tools (34 total)
+## Tools (37 total)
 
 ### Discovery
 | Tool | Purpose |
@@ -161,12 +166,15 @@ Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"`
 | `wx_meteogram_warm_store` | Warm a point-timeseries grid store for repeated meteogram sampling |
 | `wx_radar` | Native rustwx NEXRAD Level-II rendering via `radar_export`: base, dual-pol, SRV, VIL, echo tops, and feature JSON |
 | `wx_sounding` | Skew-T at (lat, lon) rendered by rustwx's native `sounding_plot` binary; supports `sample_method="box-mean"` with `box_radius_km` |
+| `wx_native_obs_preview` | Quicklook PNG from a local GOES, MRMS, or Level-II file before it becomes a training shard; Level-II velocity supports rustwx dealiasing |
 
 ### Research mode
 | Tool | Purpose |
 |---|---|
 | `wx_research_profile_sweep` | Multi-point ECAPE sweep across (point Ã— date Ã— cycle Ã— fhour). Modes: `targets` / `random` / `stress`. Aggregated CSV with timing breakdown |
 | `wx_build_dataset` | Multi-day batch renders or profile probes (background) |
+| `wx_native_dataset_plan` | Write a selectable HRRR/GOES/MRMS/Level-II training-data plan |
+| `wx_native_dataset_run` | Fetch/materialize a native training-data plan into shards |
 
 ### Cache & jobs
 | Tool | Purpose |

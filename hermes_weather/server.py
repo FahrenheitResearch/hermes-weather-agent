@@ -30,6 +30,7 @@ from .tools import (
     ecape as ecape_tool,
     fetch as fetch_tool,
     meteogram as meteogram_tool,
+    native_dataset as native_dataset_tool,
     radar as radar_tool,
     render as render_tool,
     research as research_tool,
@@ -730,6 +731,107 @@ def _tool_definitions() -> list[Tool]:
             },
         ),
         Tool(
+            name="wx_native_dataset_plan",
+            description=(
+                "Write a rustwx native multisource training-data plan. Agents can select HRRR fields, "
+                "MRMS products, GOES ABI channels, and NEXRAD Level-II products independently before "
+                "materialization."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_name": {"type": "string", "default": "rustwx_hrrr_multisource_v1"},
+                    "case": {
+                        "type": "string",
+                        "description": "Single ID,START_UTC,HOURS entry, e.g. 20240506_ok_ks,2024-05-06T12:00:00Z,24",
+                    },
+                    "cases": {"type": "array", "items": {"type": "string"}},
+                    "tile_grid": {
+                        "type": "string",
+                        "description": "WEST,EAST,SOUTH,NORTH,ROWS,COLS regular grid, e.g. -104,-88,30,40,4,6",
+                    },
+                    "tiles": {"type": "array", "items": {"type": "string"}},
+                    "shard_index": {"type": "integer", "default": 0},
+                    "shard_count": {"type": "integer", "default": 1},
+                    "grid_size": {"type": "integer", "default": 512},
+                    "history_steps": {"type": "integer", "default": 3},
+                    "forecast_step_frames": {"type": "integer", "default": 1},
+                    "hrrr_fields": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "mrms_fields": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "goes_channels": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "level2_products": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "out": {"type": "string"},
+                    "print_plan": {"type": "boolean", "default": False},
+                    "timeout": {"type": "integer", "default": 120},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="wx_native_dataset_run",
+            description=(
+                "Run a rustwx native multisource training-data plan. Can fetch HRRR/GOES/MRMS/Level-II "
+                "sources and materialize shards; background by default."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "plan_path": {"type": "string"},
+                    "source_root": {"type": "string"},
+                    "cache_root": {"type": "string"},
+                    "shard_out": {"type": "string"},
+                    "progress_out": {"type": "string"},
+                    "report_out": {"type": "string"},
+                    "allow_missing_sources": {"type": "boolean", "default": False},
+                    "fetch_hrrr": {"type": "boolean", "default": False},
+                    "fetch_obs": {"type": "boolean", "default": False},
+                    "fetch_radar": {"type": "boolean", "default": False},
+                    "max_attempts": {"type": "integer", "default": 3},
+                    "continue_on_error": {"type": "boolean", "default": False},
+                    "rayon_threads": {"type": "integer", "default": 0},
+                    "background": {"type": "boolean", "default": True},
+                    "timeout": {"type": "integer", "default": 3600},
+                },
+                "required": ["plan_path"],
+            },
+        ),
+        Tool(
+            name="wx_native_obs_preview",
+            description=(
+                "Render a local raw GOES, MRMS, or NEXRAD Level-II file to a quicklook PNG with rustwx. "
+                "Use this to verify raw training inputs before or after conversion."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["goes", "mrms", "level2"]},
+                    "input": {"type": "string"},
+                    "out": {"type": "string"},
+                    "size": {"type": "integer", "default": 512},
+                    "bounds": {
+                        "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
+                        "description": "WEST,EAST,SOUTH,NORTH, or [west,east,south,north]. Used by GOES/MRMS.",
+                    },
+                    "channel": {"type": "string", "description": "GOES channel, e.g. C13"},
+                    "product": {"type": "string", "description": "Level-II product, e.g. reflectivity, velocity, cc, zdr, kdp"},
+                    "radar_site": {"type": "string"},
+                    "center_lat": {"type": "number"},
+                    "center_lon": {"type": "number"},
+                    "span_km": {"type": "number", "default": 512.0},
+                    "min_value": {"type": "number"},
+                    "max_value": {"type": "number"},
+                    "dealias": {
+                        "type": "string",
+                        "enum": ["auto", "off", "radial", "sweep"],
+                        "default": "auto",
+                        "description": "Velocity dealiasing for Level-II quicklooks.",
+                    },
+                    "timeout": {"type": "integer", "default": 300},
+                },
+                "required": ["kind", "input"],
+            },
+        ),
+        Tool(
             name="wx_research_profile_sweep",
             description=(
                 "Run a multi-point ECAPE profile sweep across (point × date × cycle × forecast_hour). "
@@ -911,6 +1013,12 @@ def _dispatch(name: str, args: dict) -> dict | list:
 
     if name == "wx_build_dataset":
         return ds_tool.build_dataset(ENV, **args)
+    if name == "wx_native_dataset_plan":
+        return native_dataset_tool.plan(ENV, **args)
+    if name == "wx_native_dataset_run":
+        return native_dataset_tool.run_plan(ENV, **args)
+    if name == "wx_native_obs_preview":
+        return native_dataset_tool.preview(ENV, **args)
     if name == "wx_research_profile_sweep":
         return research_tool.profile_sweep(ENV, **args)
 

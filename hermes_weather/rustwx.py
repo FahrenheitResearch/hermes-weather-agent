@@ -41,6 +41,9 @@ OPTIONAL_BINARIES = [
     "hrrr_pressure_volume_store",    # HRRR pressure VolumeStore builder
     "volume_store_cross_section_render",  # fast VolumeStore cross-section renderer
     "radar_export",                  # native Rust NEXRAD Level-II renderer
+    "native_dataset_plan",           # multisource HRRR/GOES/MRMS/Level-II training-plan writer
+    "native_dataset_runner",         # multisource training-shard materializer/fetcher
+    "native_obs_preview",            # raw GOES/MRMS/Level-II quicklook PNG renderer
     "hrrr_ecape_profile_probe",      # single-point ECAPE diagnostics
     "hrrr_ecape_grid_research",      # swath-scale ECAPE statistics
     "hrrr_ecape_ratio_display",      # legacy ratio panel (render_maps_json now covers single recipes)
@@ -93,7 +96,7 @@ class RustwxBinaryMissing(RuntimeError):
             + (f" in {bin_dir}" if bin_dir else "")
             + ". This is an optional binary used by specialty tools (sounding,"
               " cross sections, VolumeStore cross sections, ECAPE profile probe,"
-              " ECAPE grid research)."
+              " ECAPE grid research, native training-data, raw observation preview)."
               " Build it with: cargo build --release --bin "
             + name
             + ", or set HERMES_RUSTWX_BIN_DIR to your rustwx target/release dir."

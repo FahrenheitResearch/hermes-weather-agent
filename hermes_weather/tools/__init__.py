@@ -14,5 +14,6 @@ Module → tool surface:
   radar            wx_radar
   sounding         wx_sounding
   dataset          wx_build_dataset
+  native_dataset   wx_native_dataset_plan, wx_native_dataset_run, wx_native_obs_preview
   jobs             wx_job_status, wx_job_list, wx_job_cancel
 """
