@@ -70,6 +70,8 @@ def plan(
     hrrr_fields: list[str] | str | None = None,
     mrms_fields: list[str] | str | None = None,
     goes_channels: list[str] | str | None = None,
+    goes_product_family: str | None = None,
+    goes_sector: str | None = None,
     level2_products: list[str] | str | None = None,
     out: str | None = None,
     print_plan: bool = False,
@@ -102,6 +104,10 @@ def plan(
         value = _csv(values)
         if value:
             args.extend([flag, value])
+    if goes_product_family:
+        args.extend(["--goes-product-family", goes_product_family])
+    if goes_sector:
+        args.extend(["--goes-sector", goes_sector])
     if print_plan:
         args.append("--print")
 

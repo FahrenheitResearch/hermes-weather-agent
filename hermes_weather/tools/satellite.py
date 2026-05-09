@@ -36,6 +36,30 @@ DEFAULT_PRODUCTS = [
     "goes_abi_band_15",
     "goes_abi_band_16",
 ]
+FULL_DISK_SAFE_PRODUCTS = [
+    "goes_abi_band_13",
+    "goes_airmass_rgb",
+    "goes_dust_rgb",
+]
+AUTO_BOUNDS_SECTORS = {
+    "full",
+    "full_disk",
+    "fulldisk",
+    "full_disc",
+    "fulldisc",
+    "fd",
+    "f",
+    "meso",
+    "mesoscale",
+    "meso1",
+    "mesoscale1",
+    "mesoscale_1",
+    "m1",
+    "meso2",
+    "mesoscale2",
+    "mesoscale_2",
+    "m2",
+}
 
 
 def _collect_pngs(value: Any) -> list[str]:
@@ -65,11 +89,16 @@ def _render_goes_satellite(env: RustwxEnv, request: dict) -> dict:
     return json.loads(rustwx.render_goes_satellite_json(json.dumps(request, default=str)))
 
 
+def _normalize_slug(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def satellite(
     env: RustwxEnv,
     *,
     satellite: str = "goes18",
     abi_product: str = "ABI-L2-CMIPC",
+    sector: str | None = None,
     domain: str = "pacific_southwest",
     bounds: list[float] | None = None,
     label: str | None = None,
@@ -85,6 +114,8 @@ def satellite(
     glm_lookback_hours: int | None = None,
     glm_max_age_min: float | None = None,
     high_speed_png: bool = True,
+    auto_bounds: bool | None = None,
+    allow_high_resolution_full_disk: bool = False,
     skip_scan_id: str | None = None,
     out_dir: str | None = None,
 ) -> dict:
@@ -95,20 +126,28 @@ def satellite(
             "error": "rustwx Python module not installed. Run: pip install 'rustwx>=0.5.0'",
         }
 
+    sector_slug = _normalize_slug(sector) if sector else None
+    sector_auto_domain = (
+        sector_slug in AUTO_BOUNDS_SECTORS and bounds is None and domain == "pacific_southwest"
+    )
     domain_slug = domain.strip().lower().replace(" ", "-")
+    path_domain = domain
+    if sector_auto_domain:
+        full_disk_aliases = {"full", "full_disk", "fulldisk", "full_disc", "fulldisc", "fd", "f"}
+        path_domain = "goes-full-disk" if sector_slug in full_disk_aliases else "goes-mesoscale"
+        domain_slug = path_domain
     if bounds is None and domain_slug in SOCAL_ALIASES:
         bounds = SOCAL_BOUNDS
         label = label or "Southern California"
 
     out_root = Path(out_dir) if out_dir else (
-        env.out_root / "satellite" / satellite / domain.replace(" ", "-")
+        env.out_root / "satellite" / satellite / path_domain.replace(" ", "-")
     )
     out_root.mkdir(parents=True, exist_ok=True)
 
     request: dict[str, Any] = {
         "satellite": satellite,
         "abi_product": abi_product,
-        "domain": domain,
         "out_dir": str(out_root.resolve()).replace("\\", "/"),
         "cache_dir": str(env.cache_dir.resolve()).replace("\\", "/"),
         "scan_lookback_hours": scan_lookback_hours,
@@ -116,12 +155,27 @@ def satellite(
         "download_glm": download_glm,
         "high_speed_png": high_speed_png,
     }
+    if not sector_auto_domain:
+        request["domain"] = domain
+    if sector:
+        request["sector"] = sector
+    if auto_bounds is not None:
+        request["auto_bounds"] = bool(auto_bounds)
+    elif sector_slug in AUTO_BOUNDS_SECTORS:
+        request["auto_bounds"] = True
+    if allow_high_resolution_full_disk:
+        request["allow_high_resolution_full_disk"] = True
     if bounds:
         request["bounds"] = list(bounds)
         request.pop("domain", None)
     if label:
         request["label"] = label
-    selected_products = list(products) if products else list(DEFAULT_PRODUCTS)
+    if products:
+        selected_products = list(products)
+    elif sector_slug in {"full", "full_disk", "fulldisk", "full_disc", "fulldisc", "fd", "f"}:
+        selected_products = list(FULL_DISK_SAFE_PRODUCTS)
+    else:
+        selected_products = list(DEFAULT_PRODUCTS)
     request["products"] = selected_products
     if any("glm" in product.lower() for product in selected_products):
         request["download_glm"] = True
@@ -155,7 +209,8 @@ def satellite(
         "ok": bool(pngs),
         "satellite": satellite,
         "abi_product": abi_product,
-        "domain": None if bounds else domain,
+        "sector": sector,
+        "domain": None if bounds else (None if sector_auto_domain else domain),
         "bounds": bounds,
         "products": request.get("products"),
         "out_dir": str(out_root),

@@ -546,6 +546,10 @@ def _tool_definitions() -> list[Tool]:
                 "properties": {
                     "satellite": {"type": "string", "default": "goes18"},
                     "abi_product": {"type": "string", "default": "ABI-L2-CMIPC"},
+                    "sector": {
+                        "type": "string",
+                        "description": "GOES ABI sector shortcut: conus, full_disk, meso1, or meso2",
+                    },
                     "domain": {"type": "string", "default": "pacific_southwest"},
                     "bounds": {
                         "type": "array",
@@ -569,6 +573,15 @@ def _tool_definitions() -> list[Tool]:
                     "glm_lookback_hours": {"type": "integer"},
                     "glm_max_age_min": {"type": "number"},
                     "high_speed_png": {"type": "boolean", "default": True},
+                    "auto_bounds": {
+                        "type": "boolean",
+                        "description": "Infer render bounds from the ABI fixed grid scene, useful for full disk and mesoscale sectors",
+                    },
+                    "allow_high_resolution_full_disk": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Allow full-disk high-resolution visible bands such as C02",
+                    },
                     "skip_scan_id": {"type": "string"},
                     "out_dir": {"type": "string"},
                 },
@@ -759,6 +772,14 @@ def _tool_definitions() -> list[Tool]:
                     "hrrr_fields": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
                     "mrms_fields": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
                     "goes_channels": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "goes_product_family": {
+                        "type": "string",
+                        "description": "GOES ABI multichannel product family, e.g. ABI-L2-MCMIPC, ABI-L2-MCMIPF, ABI-L2-MCMIPM, ABI-L2-MCMIPM1, or ABI-L2-MCMIPM2",
+                    },
+                    "goes_sector": {
+                        "type": "string",
+                        "description": "Shortcut for GOES native dataset sector: conus, full_disk, meso1, or meso2",
+                    },
                     "level2_products": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
                     "out": {"type": "string"},
                     "print_plan": {"type": "boolean", "default": False},
