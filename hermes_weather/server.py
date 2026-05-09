@@ -582,6 +582,16 @@ def _tool_definitions() -> list[Tool]:
                         "default": False,
                         "description": "Allow full-disk high-resolution visible bands such as C02",
                     },
+                    "sequence_count": {
+                        "type": "integer",
+                        "description": "Render the latest N complete ABI scans for a mesoscale sequence",
+                    },
+                    "sequence_gif": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Write an animated GIF from sequence_count frames",
+                    },
+                    "sequence_gif_delay_ms": {"type": "integer", "default": 180},
                     "skip_scan_id": {"type": "string"},
                     "out_dir": {"type": "string"},
                 },

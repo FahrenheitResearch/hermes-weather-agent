@@ -38,8 +38,6 @@ DEFAULT_PRODUCTS = [
 ]
 FULL_DISK_SAFE_PRODUCTS = [
     "goes_abi_band_13",
-    "goes_airmass_rgb",
-    "goes_dust_rgb",
 ]
 AUTO_BOUNDS_SECTORS = {
     "full",
@@ -116,6 +114,9 @@ def satellite(
     high_speed_png: bool = True,
     auto_bounds: bool | None = None,
     allow_high_resolution_full_disk: bool = False,
+    sequence_count: int | None = None,
+    sequence_gif: bool = False,
+    sequence_gif_delay_ms: int | None = None,
     skip_scan_id: str | None = None,
     out_dir: str | None = None,
 ) -> dict:
@@ -165,6 +166,12 @@ def satellite(
         request["auto_bounds"] = True
     if allow_high_resolution_full_disk:
         request["allow_high_resolution_full_disk"] = True
+    if sequence_count is not None:
+        request["sequence_count"] = max(1, int(sequence_count))
+    if sequence_gif:
+        request["sequence_gif"] = True
+    if sequence_gif_delay_ms is not None:
+        request["sequence_gif_delay_ms"] = int(sequence_gif_delay_ms)
     if bounds:
         request["bounds"] = list(bounds)
         request.pop("domain", None)
