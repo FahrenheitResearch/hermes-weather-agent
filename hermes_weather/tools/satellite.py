@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -85,6 +87,153 @@ def _render_goes_satellite(env: RustwxEnv, request: dict) -> dict:
             "installed rustwx does not expose render_goes_satellite_json; install rustwx>=0.5.0"
         )
     return json.loads(rustwx.render_goes_satellite_json(json.dumps(request, default=str)))
+
+
+def _render_goes_native_sequence(env: RustwxEnv, request: dict) -> tuple[dict | None, list[str], list[str]]:
+    try:
+        import rustwx  # type: ignore
+    except Exception:
+        rustwx = None
+    if rustwx is not None and hasattr(rustwx, "render_goes_native_sequence_json"):
+        report = json.loads(rustwx.render_goes_native_sequence_json(json.dumps(request, default=str)))
+        return report, [], []
+
+    exe = env.require_binary("goes_native_sequence")
+    args = [
+        str(exe),
+        "--satellite", str(request["satellite"]),
+        "--abi-product", str(request["abi_product"]),
+        "--product", str(request["product"]),
+        "--domain", str(request["domain_slug"]),
+        "--label", str(request["domain_label"]),
+        "--west", str(float(request["west"])),
+        "--east", str(float(request["east"])),
+        "--south", str(float(request["south"])),
+        "--north", str(float(request["north"])),
+        "--out-dir", str(Path(request["out_dir"]).resolve()),
+        "--cache-dir", str(Path(request["cache_dir"]).resolve()),
+        "--latest-count", str(max(1, int(request["latest_count"]))),
+        "--scan-lookback-hours", str(max(1, int(request["scan_lookback_hours"]))),
+        "--downsample", str(float(request["downsample"])),
+        "--download-workers", str(max(0, int(request["download_workers"]))),
+        "--render-workers", str(max(0, int(request["render_workers"]))),
+        "--png-compression", str(request["png_compression"]),
+    ]
+    if request.get("abi_sector"):
+        args.extend(["--sector", str(request["abi_sector"])])
+    if request.get("start_time_utc"):
+        args.extend(["--start", str(request["start_time_utc"])])
+    if request.get("end_time_utc"):
+        args.extend(["--end", str(request["end_time_utc"])])
+    if request.get("min_step_minutes"):
+        args.extend(["--min-step-minutes", str(int(request["min_step_minutes"]))])
+    if not request.get("use_cache", True):
+        args.append("--no-cache")
+    if request.get("max_width"):
+        args.extend(["--max-width", str(int(request["max_width"]))])
+    if request.get("max_height"):
+        args.extend(["--max-height", str(int(request["max_height"]))])
+
+    proc = subprocess.run(
+        args,
+        env=env.subprocess_env(),
+        capture_output=True,
+        text=True,
+        timeout=int(request.get("timeout", 1800)),
+    )
+    report: dict[str, Any] | None = None
+    if proc.stdout.strip():
+        try:
+            report = json.loads(proc.stdout)
+        except Exception:
+            report = None
+    return report, proc.stdout.splitlines()[-40:], proc.stderr.splitlines()[-40:]
+
+
+def _write_gif(
+    pngs: list[str],
+    gif_path: Path,
+    *,
+    fps: float = 8.0,
+    width: int | None = 1200,
+) -> dict:
+    gif_path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        concat_path = gif_path.with_suffix(".ffconcat")
+        duration = 1.0 / max(0.1, float(fps))
+        lines = ["ffconcat version 1.0"]
+        for png in pngs:
+            escaped = str(Path(png)).replace("\\", "/").replace("'", "'\\''")
+            lines.append(f"file '{escaped}'")
+            lines.append(f"duration {duration:.6f}")
+        if pngs:
+            escaped = str(Path(pngs[-1])).replace("\\", "/").replace("'", "'\\''")
+            lines.append(f"file '{escaped}'")
+        concat_path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        scale = f"scale={int(width)}:-1:flags=lanczos," if width else ""
+        vf = (
+            f"fps={float(fps):g},{scale}"
+            "split[s0][s1];[s0]palettegen=max_colors=192[p];"
+            "[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+        )
+        started = time.time()
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_path),
+                "-vf",
+                vf,
+                str(gif_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        return {
+            "ok": proc.returncode == 0 and gif_path.exists(),
+            "method": "ffmpeg",
+            "path": str(gif_path),
+            "elapsed_s": round(time.time() - started, 3),
+            "returncode": proc.returncode,
+            "stderr_tail": proc.stderr.splitlines()[-20:],
+        }
+
+    from PIL import Image
+
+    started = time.time()
+    frames = []
+    for png in pngs:
+        image = Image.open(png).convert("P", palette=Image.Palette.ADAPTIVE, colors=192)
+        if width and image.width != width:
+            height = max(1, round(image.height * (width / image.width)))
+            image = image.resize((width, height))
+        frames.append(image)
+    if not frames:
+        return {"ok": False, "method": "pillow", "path": str(gif_path), "error": "no frames"}
+    frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=round(1000 / max(0.1, float(fps))),
+        loop=0,
+        optimize=False,
+    )
+    return {
+        "ok": gif_path.exists(),
+        "method": "pillow",
+        "path": str(gif_path),
+        "elapsed_s": round(time.time() - started, 3),
+    }
 
 
 def _normalize_slug(value: str) -> str:
@@ -226,4 +375,114 @@ def satellite(
         "elapsed_s": round(time.time() - started, 2),
         "request": request,
         "report": report,
+    }
+
+
+def native_sequence(
+    env: RustwxEnv,
+    *,
+    satellite: str = "goes18",
+    abi_product: str = "ABI-L2-CMIPC",
+    sector: str | None = None,
+    product: str = "geocolor",
+    bounds: list[float] | None = None,
+    west: float | None = None,
+    east: float | None = None,
+    south: float | None = None,
+    north: float | None = None,
+    domain: str = "native_crop",
+    label: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    latest_count: int = 1,
+    scan_lookback_hours: int = 6,
+    min_step_minutes: int | None = None,
+    use_cache: bool = True,
+    downsample: float = 1.0,
+    max_width: int | None = None,
+    max_height: int | None = None,
+    download_workers: int = 8,
+    render_workers: int = 0,
+    png_compression: str = "fast",
+    make_gif: bool = False,
+    gif_fps: float = 8.0,
+    gif_width: int | None = 1200,
+    gif_path: str | None = None,
+    out_dir: str | None = None,
+    timeout: int = 1800,
+) -> dict:
+    """Render fast native-grid GOES crops over an explicit bbox and time window."""
+    if bounds is not None:
+        if len(bounds) != 4:
+            return {"ok": False, "error": "bounds must be [west, east, south, north]"}
+        west, east, south, north = [float(value) for value in bounds]
+    if west is None or east is None or south is None or north is None:
+        return {"ok": False, "error": "provide bounds or west/east/south/north"}
+
+    out_root = Path(out_dir) if out_dir else env.out_root / "satellite_native_sequence" / satellite / domain
+    out_root.mkdir(parents=True, exist_ok=True)
+    request = {
+        "satellite": satellite,
+        "abi_product": abi_product,
+        "abi_sector": sector,
+        "product": product,
+        "domain_slug": domain,
+        "domain_label": label or domain.replace("_", " ").replace("-", " ").title(),
+        "west": float(west),
+        "east": float(east),
+        "south": float(south),
+        "north": float(north),
+        "bounds": [float(west), float(east), float(south), float(north)],
+        "out_dir": str(out_root.resolve()),
+        "cache_dir": str(env.cache_dir.resolve()),
+        "start_time_utc": start,
+        "end_time_utc": end,
+        "latest_count": max(1, int(latest_count)),
+        "scan_lookback_hours": max(1, int(scan_lookback_hours)),
+        "min_step_minutes": int(min_step_minutes) if min_step_minutes else None,
+        "use_cache": bool(use_cache),
+        "downsample": float(downsample),
+        "max_width": int(max_width) if max_width else None,
+        "max_height": int(max_height) if max_height else None,
+        "download_workers": max(0, int(download_workers)),
+        "render_workers": max(0, int(render_workers)),
+        "png_compression": png_compression,
+        "timeout": int(timeout),
+    }
+
+    started = time.time()
+    try:
+        report, stdout_tail, stderr_tail = _render_goes_native_sequence(env, request)
+        returncode = 0
+    except Exception as exc:
+        return {
+            "ok": False,
+            "binary": "goes_native_sequence",
+            "request": request,
+            "error": str(exc),
+            "elapsed_s": round(time.time() - started, 3),
+        }
+    pngs = sorted(str(path) for path in out_root.rglob("*.png"))
+    gif: dict[str, Any] | None = None
+    if make_gif and pngs:
+        target_gif = (
+            Path(gif_path)
+            if gif_path
+            else out_root / f"{domain}_{product}_{len(pngs)}frames.gif"
+        )
+        gif = _write_gif(pngs, target_gif, fps=gif_fps, width=gif_width)
+    return {
+        "ok": returncode == 0 and bool(pngs) and (gif is None or gif.get("ok", False)),
+        "renderer": "rustwx.render_goes_native_sequence_json_or_binary",
+        "returncode": returncode,
+        "elapsed_s": round(time.time() - started, 3),
+        "out_dir": str(out_root),
+        "pngs": pngs,
+        "png_count": len(pngs),
+        "gif": gif,
+        "gif_path": gif.get("path") if gif else None,
+        "request": request,
+        "report": report,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
     }

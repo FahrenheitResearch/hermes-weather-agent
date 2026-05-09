@@ -44,6 +44,7 @@ OPTIONAL_BINARIES = [
     "native_dataset_plan",           # multisource HRRR/GOES/MRMS/Level-II training-plan writer
     "native_dataset_runner",         # multisource training-shard materializer/fetcher
     "native_obs_preview",            # raw GOES/MRMS/Level-II quicklook PNG renderer
+    "goes_native_sequence",          # fast native-grid GOES crop/sequence renderer
     "hrrr_ecape_profile_probe",      # single-point ECAPE diagnostics
     "hrrr_ecape_grid_research",      # swath-scale ECAPE statistics
     "hrrr_ecape_ratio_display",      # legacy ratio panel (render_maps_json now covers single recipes)

@@ -599,6 +599,78 @@ def _tool_definitions() -> list[Tool]:
             },
         ),
         Tool(
+            name="wx_goes_native_sequence",
+            description=(
+                "Fast native-grid GOES ABI crop/sequence renderer. Use this for arbitrary "
+                "lat/lon boxes, native-resolution closeups, downsampled loops, and explicit "
+                "time windows without map-projection overhead."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "satellite": {"type": "string", "default": "goes18"},
+                    "abi_product": {"type": "string", "default": "ABI-L2-CMIPC"},
+                    "sector": {
+                        "type": "string",
+                        "description": "GOES ABI sector shortcut: conus, full_disk, meso1, or meso2",
+                    },
+                    "product": {
+                        "type": "string",
+                        "default": "geocolor",
+                        "description": "geocolor, airmass, dust, fire_temperature, sandwich, day_night_cloud_micro_combo, or band_13/C13",
+                    },
+                    "bounds": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "[west, east, south, north]",
+                    },
+                    "west": {"type": "number"},
+                    "east": {"type": "number"},
+                    "south": {"type": "number"},
+                    "north": {"type": "number"},
+                    "domain": {"type": "string", "default": "native_crop"},
+                    "label": {"type": "string"},
+                    "start": {
+                        "type": "string",
+                        "description": "Inclusive RFC3339 start time, e.g. 2026-05-08T21:00:00Z",
+                    },
+                    "end": {
+                        "type": "string",
+                        "description": "Inclusive RFC3339 end time. Omit start/end for latest mode.",
+                    },
+                    "latest_count": {"type": "integer", "default": 1},
+                    "scan_lookback_hours": {"type": "integer", "default": 6},
+                    "min_step_minutes": {"type": "integer"},
+                    "use_cache": {"type": "boolean", "default": True},
+                    "downsample": {"type": "number", "default": 1.0},
+                    "max_width": {"type": "integer"},
+                    "max_height": {"type": "integer"},
+                    "download_workers": {"type": "integer", "default": 8},
+                    "render_workers": {"type": "integer", "default": 0},
+                    "png_compression": {
+                        "type": "string",
+                        "enum": ["default", "fast", "fastest"],
+                        "default": "fast",
+                    },
+                    "make_gif": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Assemble the rendered PNG sequence into an animated GIF.",
+                    },
+                    "gif_fps": {"type": "number", "default": 8},
+                    "gif_width": {
+                        "type": "integer",
+                        "default": 1200,
+                        "description": "GIF output width in pixels; omit/null to keep frame width.",
+                    },
+                    "gif_path": {"type": "string"},
+                    "out_dir": {"type": "string"},
+                    "timeout": {"type": "integer", "default": 1800},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="wx_meteogram",
             description=(
                 "Sample a point forecast time series via rustwx.sample_point_timeseries_json. "
@@ -1031,6 +1103,8 @@ def _dispatch(name: str, args: dict) -> dict | list:
 
     if name == "wx_satellite":
         return satellite_tool.satellite(ENV, **args)
+    if name == "wx_goes_native_sequence":
+        return satellite_tool.native_sequence(ENV, **args)
     if name == "wx_meteogram":
         return meteogram_tool.meteogram(ENV, **_with_run(args, key="run_str"))
     if name == "wx_meteogram_warm_store":

@@ -52,7 +52,7 @@ pip install -U rustwx hermes-weather-agent
 weather-mcp --doctor
 ```
 
-That's it for every map-rendering tool â€” the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.5.6` is recommended for the current public release.
+That's it for every map-rendering tool â€” the rustwx PyPI wheel ships the `rustwx-agent-v1` Python API used by this plugin (no Rust toolchain, no separate binaries, no `netcdf.dll`). `rustwx>=0.5.7` is recommended for the current public release.
 
 `weather-mcp --doctor` should report `rustwx_module_available: true`, `agent_api: rustwx-agent-v1`, and a nonzero `domain_count`.
 
@@ -65,6 +65,7 @@ A small set of tools sit *outside* the agent-v1 contract today and need rustwx w
 - `wx_radar` (NEXRAD Level-II renderer)
 - `wx_native_dataset_plan` / `wx_native_dataset_run` (Rust-native HRRR/GOES/MRMS/Level-II training-data plans and shards)
 - `wx_native_obs_preview` (quicklook PNGs from local GOES, MRMS, or Level-II files)
+- `wx_goes_native_sequence` (native-grid GOES crops, time-window sequences, and GIF loops)
 - `wx_ecape_profile` (single-point ECAPE probe)
 - `wx_ecape_grid` (full-grid ECAPE swath research)
 
@@ -81,6 +82,7 @@ cargo build -p rustwx-cli --release \
   --bin native_dataset_plan \
   --bin native_dataset_runner \
   --bin native_obs_preview \
+  --bin goes_native_sequence \
   --bin hrrr_ecape_profile_probe \
   --bin hrrr_ecape_grid_research
 
@@ -168,6 +170,7 @@ Hermes is HRRR-first for local operational use. Tool defaults use `run="latest"`
 | `wx_radar` | Native rustwx NEXRAD Level-II rendering via `radar_export`: base, dual-pol, SRV, VIL, echo tops, and feature JSON |
 | `wx_sounding` | Skew-T at (lat, lon) rendered by rustwx's native `sounding_plot` binary; supports `sample_method="box-mean"` with `box_radius_km` |
 | `wx_native_obs_preview` | Quicklook PNG from a local GOES, MRMS, or Level-II file before it becomes a training shard; Level-II velocity supports rustwx dealiasing |
+| `wx_goes_native_sequence` | Fast GOES ABI image/loop generator for arbitrary lat/lon boxes, full disk, CONUS, or mesoscale sectors; can return PNG frames and an animated GIF |
 
 ### Research mode
 | Tool | Purpose |
