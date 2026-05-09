@@ -7,4 +7,4 @@ profile diagnostics, cross sections, NEXRAD radar, and dataset assembly.
 All compute and rendering happens inside Rust; this package is glue.
 """
 
-__version__ = "0.5.5"
+__version__ = "0.5.6"
